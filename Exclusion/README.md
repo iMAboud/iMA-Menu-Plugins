@@ -1,0 +1,1 @@
+Add exclusion to Windows Security

@@ -1,0 +1,1 @@
+Reduces bulk images sizes

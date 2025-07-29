@@ -1,0 +1,1 @@
+captures the hex color of anything on desktop
