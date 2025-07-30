@@ -10,7 +10,7 @@
         "name": "Exclusion",
         "description": "Add exclusion to Windows Security",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Exclusion/exclusion.png",
-        "version": "1.0.0",
+        "version": "1.0.3",
         "launch": false
 
     },
