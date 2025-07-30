@@ -1,0 +1,1 @@
+item(type='file|dir|back.dir|drive' title='Add Exclusion' cmd='cmd.exe' args='/c powershell.exe -WindowStyle Hidden -command "Set-Clipboard -Value \"@sel.path\"" & start "" "@app.dir\plugins\Exclusion\Add-Exclusion.bat"' image=\uE194 menu='manage')
