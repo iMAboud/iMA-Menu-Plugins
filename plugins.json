@@ -16,7 +16,8 @@
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/YT/yt.png",
         "version": "1.0.0",
         "dependencies": [
-            {"name": "yt-dlp.exe"}
+            {"name": "yt-dlp.exe"},
+            {"name": "ffmpeg.exe"}
         ]
     },
     {
