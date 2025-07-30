@@ -14,7 +14,7 @@
         "name": "YT",
         "description": "Downloads any video as video or audio",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/YT/yt.png",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "dependencies": [
             {"name": "yt-dlp.exe"},
             {"name": "ffmpeg.exe"}
