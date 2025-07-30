@@ -3,7 +3,7 @@
         "name": "Draw",
         "description": "Draw over any app or desktop",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Draw/draw.png",
-        "version": "1.0.1"
+        "version": "1.0.0"
     },
     {
         "name": "Exclusion",
