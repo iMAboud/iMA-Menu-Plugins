@@ -3,7 +3,7 @@
         "name": "iMShare",
         "description": "Send and receive files between devices with no limit.",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/iMShare/imshare.png",
-        "version": "1.0.2",
+        "version": "1.0.0",
         "launch": true,
         "launch_file": "upload.exe",
         "dependencies": [
@@ -14,7 +14,7 @@
         "name": "YT",
         "description": "Downloads any video as video or audio",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/YT/yt.png",
-        "version": "1.0.1",
+        "version": "1.0.0",
         "dependencies": [
             {"name": "yt-dlp.exe"},
             {"name": "ffmpeg.exe"}
@@ -24,7 +24,7 @@
         "name": "Draw",
         "description": "Draw over any app or desktop",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Draw/draw.png",
-        "version": "1.0.1"
+        "version": "1.0.0"
     },
     {
         "name": "Exclusion",
