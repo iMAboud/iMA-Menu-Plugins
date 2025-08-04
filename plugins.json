@@ -7,17 +7,23 @@
         "launch": true,
         "launch_file": "upload.exe",
         "dependencies": [
-            {"name": "croc.exe"}
+            {
+                "name": "croc.exe"
+            }
         ]
     },
     {
         "name": "YT",
         "description": "Downloads any video as video or audio",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/YT/yt.png",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "dependencies": [
-            {"name": "yt-dlp.exe"},
-            {"name": "ffmpeg.exe"}
+            {
+                "name": "yt-dlp.exe"
+            },
+            {
+                "name": "ffmpeg.exe"
+            }
         ]
     },
     {
@@ -44,7 +50,9 @@
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Imgur/Imgur.png",
         "version": "1.0.0",
         "dependencies": [
-            {"name": "ffmpeg.exe"}
+            {
+                "name": "ffmpeg.exe"
+            }
         ]
     },
     {
@@ -59,7 +67,17 @@
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Resize/resize.png",
         "version": "1.0.0",
         "dependencies": [
-            {"name": "ffmpeg.exe"}
+            {
+                "name": "ffmpeg.exe"
+            }
         ]
+    },
+    {
+        "name": "iMA Switcher",
+        "description": "A custom plugin for switching things.",
+        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/iMA%20Switcher/icon.png",
+        "version": "1.0.0",
+        "path": "%LOCALAPPDATA%\\iMA Switcher",
+        "nss_file": "valo.nss"
     }
 ]
