@@ -6,6 +6,9 @@
         "version": "1.0.0",
         "launch": true,
         "launch_file": "upload.exe",
+        "install_path": "iMA Menu/plugins/iMShare",
+        "nss_file": "iMShare.nss",
+        "nss_path": "iMA Menu/plugins/iMShare",
         "dependencies": [
             {
                 "name": "croc.exe"
@@ -17,6 +20,9 @@
         "description": "Downloads any video as video or audio",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/YT/yt.png",
         "version": "1.0.1",
+        "install_path": "iMA Menu/plugins/YT",
+        "nss_file": "YT.nss",
+        "nss_path": "iMA Menu/plugins/YT",
         "dependencies": [
             {
                 "name": "yt-dlp.exe"
@@ -30,25 +36,37 @@
         "name": "Draw",
         "description": "Draw over any app or desktop",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Draw/draw.png",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/Draw",
+        "nss_file": "Draw.nss",
+        "nss_path": "iMA Menu/plugins/Draw"
     },
     {
         "name": "Exclusion",
         "description": "Add exclusion to Windows Security",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Exclusion/exclusion.png",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/Exclusion",
+        "nss_file": "Exclusion.nss",
+        "nss_path": "iMA Menu/plugins/Exclusion"
     },
     {
         "name": "Hex",
         "description": "captures the hex color of anything on desktop",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Hex/hex.png",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/Hex",
+        "nss_file": "Hex.nss",
+        "nss_path": "iMA Menu/plugins/Hex"
     },
     {
         "name": "Imgur",
         "description": "uploads images to imgur instantly",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Imgur/Imgur.png",
         "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/Imgur",
+        "nss_file": "Imgur.nss",
+        "nss_path": "iMA Menu/plugins/Imgur",
         "dependencies": [
             {
                 "name": "ffmpeg.exe"
@@ -59,13 +77,19 @@
         "name": "Reset",
         "description": "Resets Network with ipconfig",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Reset/reset.png",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/Reset",
+        "nss_file": "Reset.nss",
+        "nss_path": "iMA Menu/plugins/Reset"
     },
     {
         "name": "Resize",
         "description": "Reduces bulk images sizes",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Resize/resize.png",
         "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/Resize",
+        "nss_file": "Resize.nss",
+        "nss_path": "iMA Menu/plugins/Resize",
         "dependencies": [
             {
                 "name": "ffmpeg.exe"
@@ -77,6 +101,9 @@
         "description": "Riot game's account switcher & more.",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/iMA%20Switcher/icon.png",
         "version": "1.0.0",
+        "install_path": "%LOCALAPPDATA%/iMA Switcher",
+        "nss_file": "valo.nss",
+        "nss_path": "iMA Menu/imports",
         "launch": true,
         "launch_file": "iMA Switcher Installer.exe"
     }
