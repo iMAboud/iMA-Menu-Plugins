@@ -79,7 +79,5 @@
         "version": "1.0.0",
         "launch": true,
         "launch_file": "iMA Switcher Installer.exe"
-        "path": "%LOCALAPPDATA%\\iMA Switcher",
-        "nss_file": "valo.nss"
     }
 ]
