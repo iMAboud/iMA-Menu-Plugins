@@ -77,6 +77,8 @@
         "description": "Riot game's account switcher & more.",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/iMA%20Switcher/icon.png",
         "version": "1.0.0",
+        "launch": true,
+        "launch_file": "iMA Switcher Installer.exe"
         "path": "%LOCALAPPDATA%\\iMA Switcher",
         "nss_file": "valo.nss"
     }
