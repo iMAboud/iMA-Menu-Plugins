@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QGraphicsOpacityEffect
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import (
@@ -7,6 +8,25 @@ from PyQt5.QtCore import (
     pyqtSignal, QThread, QTimer, QEasingCurve
 )
 from PIL import Image
+
+# --- Constants ---
+# Processing settings
+DEFAULT_PREFIX = "resized_"
+DEFAULT_JPEG_QUALITY = 70
+DEFAULT_OPTIMIZE = True
+DEFAULT_REDUCE_COLORS = True
+DEFAULT_DITHER = Image.Dither.FLOYDSTEINBERG # Use Floyd-Steinberg dithering
+SUPPORTED_FORMATS = [".png", ".jpg", ".jpeg", ".bmp", ".ico"]
+QUANTIZE_COLORS = 256
+
+# Animation settings
+ANIMATION_DURATION = 500
+WINDOW_SIZE = (300, 300)
+CARD_SIZE = (128, 128)
+EXIT_DELAY = 500
+# --- End Constants ---
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class ResizeWorker(QThread):
     finished = pyqtSignal(str)
@@ -23,14 +43,9 @@ class ResizeWorker(QThread):
     def run(self):
         try:
             input_path = self.file_path.strip().strip('\'"')
-            supported_formats = [".png", ".jpg", ".jpeg", ".bmp", ".ico"]
             
-            if not os.path.exists(input_path):
-                self.finished.emit(self.file_path)
-                return
-            
-            if not input_path.lower().endswith(tuple(supported_formats)):
-                self.finished.emit(self.file_path)
+            if not os.path.exists(input_path) or not input_path.lower().endswith(tuple(SUPPORTED_FORMATS)):
+                logging.warning(f"Skipping unsupported or non-existent file: {input_path}")
                 return
 
             directory = os.path.dirname(input_path)
@@ -43,15 +58,16 @@ class ResizeWorker(QThread):
                     img = img.convert('RGBA')
                 
                 if self.reduce_colors and ext.lower() == ".png":
-                    img = img.quantize(colors=256, method=Image.Quantize.FASTOCTREE, dither=self.dither)
+                    img = img.quantize(colors=QUANTIZE_COLORS, method=Image.Quantize.FASTOCTREE, dither=self.dither)
 
                 if ext.lower() in [".jpg", ".jpeg"]:
                     img.save(output_path, optimize=self.optimize, quality=self.quality)
                 else:
                     img.save(output_path, optimize=self.optimize)
+            logging.info(f"Successfully processed and saved: {output_path}")
 
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"Failed to process {self.file_path}: {e}")
         finally:
             self.finished.emit(self.file_path)
 
@@ -75,7 +91,7 @@ class AnimationWindow(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         
         screen_geo = QApplication.desktop().screenGeometry()
-        self.setGeometry(screen_geo.width() // 2 - 150, screen_geo.height() // 2 - 150, 300, 300)
+        self.setGeometry(screen_geo.width() // 2 - WINDOW_SIZE[0] // 2, screen_geo.height() // 2 - WINDOW_SIZE[1] // 2, WINDOW_SIZE[0], WINDOW_SIZE[1])
         
         self.hide() 
         self.total_processed_count = 0
@@ -84,13 +100,12 @@ class AnimationWindow(QWidget):
         if not self.pending_file_paths:
             QTimer.singleShot(0, QApplication.instance().quit)
             return
-
         self.process_next_image()
 
     def process_next_image(self):
         if not self.pending_file_paths:
             if not self.active_workers:
-                QTimer.singleShot(500, QApplication.instance().quit)
+                QTimer.singleShot(EXIT_DELAY, QApplication.instance().quit)
             return
 
         file_path = self.pending_file_paths.pop(0)
@@ -99,7 +114,7 @@ class AnimationWindow(QWidget):
             pixmap = QPixmap(file_path)
             if not pixmap.isNull():
                 card = QLabel(self)
-                card.setPixmap(pixmap.scaled(128, 128, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                card.setPixmap(pixmap.scaled(CARD_SIZE[0], CARD_SIZE[1], Qt.KeepAspectRatio, Qt.SmoothTransformation))
                 card.adjustSize()
                 card.move(self.width() // 2 - card.width() // 2, self.height() // 2 - card.height() // 2)
                 card.show()
@@ -107,16 +122,17 @@ class AnimationWindow(QWidget):
                     self.show()
                 self.animate_card(card)
             else:
+                logging.warning(f"Could not load pixmap for {file_path}, processing without preview.")
                 self.start_worker_for_path(file_path)
                 self.process_next_image()
                 return
-        except Exception:
+        except Exception as e:
+            logging.error(f"Error creating preview for {file_path}: {e}")
             self.start_worker_for_path(file_path)
             self.process_next_image()
             return
 
         self.start_worker_for_path(file_path)
-
 
     def start_worker_for_path(self, file_path):
         worker = ResizeWorker(file_path, self.quality, self.optimize, self.reduce_colors, self.dither, self.prefix)
@@ -134,12 +150,12 @@ class AnimationWindow(QWidget):
                 break
         
         if self.total_processed_count == len(self.all_file_paths):
-            QTimer.singleShot(999, QApplication.instance().quit)
+            QTimer.singleShot(EXIT_DELAY, QApplication.instance().quit)
 
 
     def animate_card(self, card):
         anim_pos = QPropertyAnimation(card, b"geometry")
-        anim_pos.setDuration(500)
+        anim_pos.setDuration(ANIMATION_DURATION)
         start_rect = card.geometry()
         end_rect = QRect(self.width(), start_rect.y(), start_rect.width(), start_rect.height())
         anim_pos.setStartValue(start_rect)
@@ -149,7 +165,7 @@ class AnimationWindow(QWidget):
         opacity_effect = QGraphicsOpacityEffect(card)
         card.setGraphicsEffect(opacity_effect)
         anim_opacity = QPropertyAnimation(opacity_effect, b"opacity")
-        anim_opacity.setDuration(500)
+        anim_opacity.setDuration(ANIMATION_DURATION)
         anim_opacity.setStartValue(1.0)
         anim_opacity.setEndValue(0.0)
         anim_opacity.setEasingCurve(QEasingCurve.InQuad)
@@ -163,21 +179,16 @@ class AnimationWindow(QWidget):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        output_prefix = "resized_"
-        compression_quality = 70
-        enable_quantization = True
-        dithering_strength = 0.5
-
         app = QApplication(sys.argv)
         cleaned_paths = [p.strip().strip('\'"') for p in sys.argv[1:]]
         
         window = AnimationWindow(
             file_paths=[p for p in cleaned_paths if os.path.exists(p)],
-            quality=compression_quality,
-            optimize=True,
-            reduce_colors=enable_quantization,
-            dither=dithering_strength,
-            prefix=output_prefix
+            quality=DEFAULT_JPEG_QUALITY,
+            optimize=DEFAULT_OPTIMIZE,
+            reduce_colors=DEFAULT_REDUCE_COLORS,
+            dither=DEFAULT_DITHER,
+            prefix=DEFAULT_PREFIX
         )
         sys.exit(app.exec_())
     else:

@@ -6,6 +6,7 @@ import time
 import uuid
 import re
 import json
+import logging
 from queue import Queue
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QLineEdit, QPushButton,
                              QTextEdit, QVBoxLayout, QHBoxLayout, QProgressBar,
@@ -17,20 +18,10 @@ from PyQt5.QtGui import QColor, QPainter, QBrush, QLinearGradient, QFont, QPixma
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QPoint
 from PyQt5.QtGui import QDesktopServices, QImage
 
-
-def is_windows():
-    return platform.system() == "Windows"
-
-def resource_path(relative_path):
-    if getattr(sys, 'frozen', False):
-        if hasattr(sys, '_MEIPASS'):
-            return os.path.join(sys._MEIPASS, relative_path)
-        else:
-             return os.path.join(os.path.dirname(os.path.abspath(__file__)),relative_path)
-    else:
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
-        
-default_colors = {
+# --- Constants ---
+# This is a large dictionary of colors and styles. In a real application, this would be better managed,
+# for example by using a QSS file. For this refactoring, we'll keep it as a constant dictionary.
+DEFAULT_COLORS = {
     "background_gradient_start": "#333d3d",
     "background_gradient_end": "#182e2e",
     "queue_background": "rgba(0, 102, 102, 0.3)",
@@ -78,8 +69,28 @@ default_colors = {
     "title_bar_button_hover_border_size": 1, 
     "title_bar_button_font_size": "12px" 
 }
+SHADOW_BLUR_RADIUS = 10
+SHADOW_OFFSET_X = 4
+SHADOW_OFFSET_Y = 4
+SHADOW_OPACITY = 150
+CLEAR_MESSAGE_TIMEOUT = 3000
+# --- End Constants ---
 
-def set_drop_shadow(widget, blur_radius=10, offset_x=4, offset_y=4, opacity=150):
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def is_windows():
+    return platform.system() == "Windows"
+
+def resource_path(relative_path):
+    if getattr(sys, 'frozen', False):
+        if hasattr(sys, '_MEIPASS'):
+            return os.path.join(sys._MEIPASS, relative_path)
+        else:
+             return os.path.join(os.path.dirname(os.path.abspath(__file__)),relative_path)
+    else:
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+
+def set_drop_shadow(widget, blur_radius=SHADOW_BLUR_RADIUS, offset_x=SHADOW_OFFSET_X, offset_y=SHADOW_OFFSET_Y, opacity=SHADOW_OPACITY):
     shadow = QGraphicsDropShadowEffect()
     shadow.setBlurRadius(blur_radius)
     shadow.setColor(QColor(0, 0, 0, opacity))
@@ -119,23 +130,20 @@ class SendFileThread(QThread):
             command = f'croc --yes {self.code_prefix}'
             full_command = ["powershell", "-NoExit", "-Command", command] if is_windows() else ["croc", "--yes", self.code_prefix]
             
+            creation_flags = subprocess.CREATE_NO_WINDOW if is_windows() else 0
             self.process = subprocess.Popen(full_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                            universal_newlines=True, creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0)
+                                            universal_newlines=True, creationflags=creation_flags)
 
             self.start_time = time.time()
             self.current_file_signal.emit(self.filename, self.filesize)
             self.queue_id_signal.emit(self.queue_id)
 
-            while True:
-                line = self.process.stdout.readline()
-                if not line:
-                    break
+            for line in iter(self.process.stdout.readline, ''):
                 self.output_signal.emit(line)
                 self.parse_output_line(line)
             self.process.wait()
             
             if self.process.returncode != 0:
-                
                 if "not ready" in self.process.stdout.read():  
                     self.output_signal.emit(f"\nNot Ready\n")
                     self.finished_signal.emit(False, self.queue_id)
@@ -147,6 +155,7 @@ class SendFileThread(QThread):
                 self.status_update_signal.emit("Completed!", "white")
                 self.queue_id_signal.emit(self.queue_id)
         except Exception as e:
+            logging.error(f"Failed to receive file: {e}")
             self.output_signal.emit(f"\nAn error occurred: {e}\n")
             self.finished_signal.emit(False, self.queue_id)
     
@@ -200,29 +209,14 @@ class SendFileThread(QThread):
     
     def close_process(self):
         if self.process and self.process.poll() is None:
-            kill_command = ['taskkill', '/F', '/T', '/PID', str(self.process.pid)] if is_windows() else ['kill', '-9',
-                                                                                                      str(self.process.pid)]
+            kill_command = ['taskkill', '/F', '/T', '/PID', str(self.process.pid)] if is_windows() else ['kill', '-9', str(self.process.pid)]
             subprocess.Popen(kill_command, creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0)
-
-def update_output(output_widget, line):
-    output_widget.insertPlainText(line)
-    output_widget.verticalScrollBar().setValue(output_widget.verticalScrollBar().maximum())
-
-def handle_command_completion(success, status_label, progress_bar, window, queue_id):
-    status_label.setText("Complete!" if success else "Not Ready" if "not ready" in window.output_text.toPlainText() else "Failed.")
-    status_label.setStyleSheet(f"color: {'green' if success else 'red'};")
-    window.speed_label.setText("")
-    progress_bar.setValue(0)
-    window.is_sending = False
-    if not success:
-        window.remove_queue_item(queue_id)
-    window.process_pending_queue()
 
 class ModernScrollBar(QScrollBar):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(f"""QScrollBar:vertical {{background-color: transparent;width: 10px;margin: 0px 0px 0px 0px;}}
-            QScrollBar::handle:vertical {{background-color: {default_colors['scroll_bar_handle']};min-height: 20px;border-radius: 5px;}}
+            QScrollBar::handle:vertical {{background-color: {DEFAULT_COLORS['scroll_bar_handle']};min-height: 20px;border-radius: 5px;}}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{background: none;}}
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical{{background: none;}}""")
 
@@ -232,8 +226,8 @@ class MainWindow(QWidget):
         super().__init__()
         self.setWindowTitle("iMShare")
         self.setMinimumSize(800, 500)
-        self.current_colors = default_colors.copy()
-        self.original_default_colors = default_colors.copy()
+        self.current_colors = DEFAULT_COLORS.copy()
+        self.original_default_colors = DEFAULT_COLORS.copy()
 
         self.window_position = None
         self.start_move_position = None
@@ -1312,7 +1306,7 @@ class AddFriendPopup(QDialog):
         self.setWindowTitle("Add Friend")
         self.setModal(True)
         self.setFixedSize(350, 300)
-        self.setStyleSheet(f"background-color: {default_colors['add_friend_popup_background']}; color: {default_colors['add_friend_popup_text']};")
+        self.setStyleSheet(f"background-color: {DEFAULT_COLORS['add_friend_popup_background']}; color: {DEFAULT_COLORS['add_friend_popup_text']};")
         self.new_friend_data = {}
         self.current_pixmap = None
         self.error_label = None 

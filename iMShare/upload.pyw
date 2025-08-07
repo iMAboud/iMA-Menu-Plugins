@@ -6,6 +6,7 @@ import time
 import uuid
 import re
 import json
+import logging
 from queue import Queue
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QLineEdit, QPushButton,
                              QTextEdit, QVBoxLayout, QHBoxLayout, QProgressBar,
@@ -16,25 +17,10 @@ from PyQt5.QtGui import QIcon, QFont, QColor, QPainter, QBrush, QLinearGradient,
 from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QTimer, QPoint, QMimeData
 import pyperclip
 
-def is_windows():
-    return platform.system() == "Windows"
-
-def resource_path(relative_path):
-    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base_path, relative_path)
-
-def quote_path(path):
-    path = (path or "").strip()
-    return f'"{path}"' if path and not path.startswith('"') else path
-
-def get_clipboard_path():
-    try:
-        content = pyperclip.paste().strip()
-        return content if os.path.exists(content) else ""
-    except Exception:
-        return ""
-
-colors = {
+# --- Constants ---
+# This is a large dictionary of colors and styles. In a real application, this would be better managed,
+# for example by using a QSS file. For this refactoring, we'll keep it as a constant dictionary.
+COLORS = {
     "background_gradient_start": "#373737", "background_gradient_end": "#261f2b",
     "send_button_color": "#7e57c2", "send_button_border": "#7e57c2", "send_button_background": "rgba(126, 87, 194, 0.3)",
     "queue_background": "rgba(126, 87, 194, 0.3)", "queue_text": "white", "queue_border": "#000",
@@ -58,8 +44,36 @@ colors = {
     "title_bar_button_hover_color": "rgba(80, 80, 80, 0.5)",
     "title_bar_button_hover_border_size": 1, "title_bar_button_font_size": "12px"
 }
+SHADOW_BLUR_RADIUS = 10
+SHADOW_OFFSET_X = 4
+SHADOW_OFFSET_Y = 4
+SHADOW_OPACITY = 150
+CLEAR_MESSAGE_TIMEOUT = 3000
+DOT_ANIMATION_INTERVAL = 500
+# --- End Constants ---
 
-def set_drop_shadow(widget, blur_radius=10, offset_x=4, offset_y=4, opacity=150):
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def is_windows():
+    return platform.system() == "Windows"
+
+def resource_path(relative_path):
+    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
+
+def quote_path(path):
+    path = (path or "").strip()
+    return f'"{path}"' if path and not path.startswith('"') else path
+
+def get_clipboard_path():
+    try:
+        content = pyperclip.paste().strip()
+        return content if os.path.exists(content) else ""
+    except Exception as e:
+        logging.warning(f"Could not get clipboard content: {e}")
+        return ""
+
+def set_drop_shadow(widget, blur_radius=SHADOW_BLUR_RADIUS, offset_x=SHADOW_OFFSET_X, offset_y=SHADOW_OFFSET_Y, opacity=SHADOW_OPACITY):
     shadow = QGraphicsDropShadowEffect()
     shadow.setBlurRadius(blur_radius)
     shadow.setColor(QColor(0, 0, 0, opacity))
@@ -68,7 +82,6 @@ def set_drop_shadow(widget, blur_radius=10, offset_x=4, offset_y=4, opacity=150)
 
 class SendFileThread(QThread):
     output_signal = pyqtSignal(str)
-    status_signal = pyqtSignal(str, str)
     finished_signal = pyqtSignal(bool)
     progress_signal = pyqtSignal(int)
     speed_signal = pyqtSignal(str)
@@ -94,23 +107,22 @@ class SendFileThread(QThread):
         self.filename = os.path.basename(stripped_path)
         try:
             self.filesize = self.format_file_size(os.path.getsize(stripped_path))
-        except Exception:
+        except Exception as e:
+            logging.warning(f"Could not get file size for {stripped_path}: {e}")
             self.filesize = "N/A"
 
     def run(self):
         try:
             command = f'croc --ignore-stdin send --code {self.code_prefix} {quote_path(self.filepath)}'
             full_command = ["powershell", "-NoExit", "-Command", command] if is_windows() else command
+            creation_flags = subprocess.CREATE_NO_WINDOW if is_windows() else 0
+            shell = not is_windows()
             self.process = subprocess.Popen(full_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                            universal_newlines=True, creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0,
-                                            shell=not is_windows())  # Use shell=True on non-Windows for command as string
+                                            universal_newlines=True, creationflags=creation_flags, shell=shell)
             self.start_time = time.time()
             self.current_file_signal.emit(self.filename, self.filesize)
             self.queue_id_signal.emit(self.queue_id)
-            while True:
-                line = self.process.stdout.readline()
-                if not line:
-                    break
+            for line in iter(self.process.stdout.readline, ''):
                 self.output_signal.emit(line)
                 self.parse_output_line(line)
             self.process.wait()
@@ -122,10 +134,12 @@ class SendFileThread(QThread):
                 self.status_update_signal.emit("Completed!", "white")
                 self.queue_id_signal.emit(self.queue_id)
         except Exception as e:
+            logging.error(f"Failed to send file: {e}")
             self.output_signal.emit(f"\nAn error occurred: {e}\n")
             self.finished_signal.emit(False)
 
     def parse_output_line(self, line):
+        # ... (rest of the parsing logic remains the same)
         if hashing_match := re.match(r'Hashing (.+?)\s+(\d+)%\s+.*?\((.+?)\).*', line):
             _, progress, speed = hashing_match.groups()
             self.hashing_progress_signal.emit(int(progress))
@@ -164,32 +178,18 @@ class SendFileThread(QThread):
 
     def close_process(self):
         if self.process and self.process.poll() is None:
-            kill_command = ['taskkill', '/F', '/T', '/PID', str(self.process.pid)] if is_windows() else ['kill', '-9',
-                                                                                                      str(self.process.pid)]
+            kill_command = ['taskkill', '/F', '/T', '/PID', str(self.process.pid)] if is_windows() else ['kill', '-9', str(self.process.pid)]
             subprocess.Popen(kill_command, creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0, shell=not is_windows())
-
-def update_output(output_widget, line):
-    output_widget.insertPlainText(line)
-    scrollbar = output_widget.verticalScrollBar()
-    scrollbar.setValue(scrollbar.maximum())
-
-def handle_command_completion(success, status_label, progress_bar, window):
-    status_label.setText("Complete!" if success else "Failed.")
-    status_label.setStyleSheet(f"color: {'green' if success else 'red'};")
-    window.speed_label.setText("")
-    progress_bar.setValue(0)
-    window.is_sending = False
-    window.process_pending_queue()
 
 class CircularButton(QPushButton):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(22, 22)
-        self.setStyleSheet(f"background-color: {colors['circular_button_background']}; border-radius: 8px; color: {colors['circular_button_text']}; font-size: 12px; border: 2px solid {colors['send_button_color']};")
+        self.setStyleSheet(f"background-color: {COLORS['circular_button_background']}; border-radius: 8px; color: {COLORS['circular_button_text']}; font-size: 12px; border: 2px solid {COLORS['send_button_color']};")
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QBrush(QColor(colors['circular_button_background'])))
+        painter.setBrush(QBrush(QColor(COLORS['circular_button_background'])))
         painter.drawEllipse(self.rect())
         super().paintEvent(event)
 
@@ -197,7 +197,7 @@ class ModernScrollBar(QScrollBar):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(f"""QScrollBar:vertical {{background-color: transparent;width: 10px;margin: 0px 0px 0px 0px;}}
-            QScrollBar::handle:vertical {{background-color: {colors['scroll_bar_handle']};min-height: 20px;border-radius: 5px;}}
+            QScrollBar::handle:vertical {{background-color: {COLORS['scroll_bar_handle']};min-height: 20px;border-radius: 5px;}}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{background: none;}}
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical{{background: none;}}""")
 
@@ -218,12 +218,12 @@ class QueueListItem(QWidget):
         layout.setSpacing(1)
         
         self.label = QLabel(f"{self.truncate_filename(filename, 14)} ({filesize})")
-        self.label.setStyleSheet(f"QLabel {{color: {colors['queue_item_text']};background-color: {colors['queue_item_label_background']};border-radius: 5px;padding: 2px;}}")
+        self.label.setStyleSheet(f"QLabel {{color: {COLORS['queue_item_text']};background-color: {COLORS['queue_item_label_background']};border-radius: 5px;padding: 2px;}}")
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.label.setMaximumWidth(140) 
         layout.addWidget(self.label)
 
-        self.setStyleSheet(f"QueueListItem {{background-color: {colors['queue_item_background']};border-radius: 10px;border: 2px solid {colors['queue_item_border']};}}")
+        self.setStyleSheet(f"QueueListItem {{background-color: {COLORS['queue_item_background']};border-radius: 10px;border: 2px solid {COLORS['queue_item_border']};}}")
         set_drop_shadow(self.label, opacity=150)
     
     def truncate_filename(self, filename, length):
@@ -239,21 +239,21 @@ class SettingsPopup(QDialog):
         self.main_window = main_window
         self.setWindowTitle("Set Code")
         self.setWindowFlag(Qt.FramelessWindowHint)
-        self.setStyleSheet(f"background-color: {colors['set_code_popup_background']}; border-radius: 10px;")
+        self.setStyleSheet(f"background-color: {COLORS['set_code_popup_background']}; border-radius: 10px;")
         self.setModal(True)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
 
         self.code_label = QLabel("Set Code:")
-        self.code_label.setStyleSheet(f"color: {colors['status_text']}; font-size: 14px; background-color: transparent;")
+        self.code_label.setStyleSheet(f"color: {COLORS['status_text']}; font-size: 14px; background-color: transparent;")
         layout.addWidget(self.code_label)
         set_drop_shadow(self.code_label, opacity=150)
 
         self.code_input = QLineEdit(initial_code)
         self.code_input.textChanged.connect(self.validate_code_input)
         self.code_input.setStyleSheet(
-            f"QLineEdit {{background-color: #444; color: {colors['path_entry_text']}; border: 2px solid {colors['set_code_popup_border']}; border-radius: 10px; padding: 5px;}}")
+            f"QLineEdit {{background-color: #444; color: {COLORS['path_entry_text']}; border: 2px solid {COLORS['set_code_popup_border']}; border-radius: 10px; padding: 5px;}}")
         layout.addWidget(self.code_input)
         set_drop_shadow(self.code_input, opacity=150)
 
@@ -271,8 +271,8 @@ class SettingsPopup(QDialog):
 
         self.set_button = QPushButton("Set")
         self.set_button.clicked.connect(self.save_settings)
-        self.set_button.setStyleSheet(f"QPushButton {{background-color: {colors['set_code_button_background']}; color: {colors['set_code_button_text']}; border: 2px solid {colors['set_code_button_hover']}; border-radius: 10px; padding: 5px;}}"
-                                     f"QPushButton:hover {{background-color: {colors['set_code_button_hover']};}}")
+        self.set_button.setStyleSheet(f"QPushButton {{background-color: {COLORS['set_code_button_background']}; color: {COLORS['set_code_button_text']}; border: 2px solid {COLORS['set_code_button_hover']}; border-radius: 10px; padding: 5px;}}"
+                                     f"QPushButton:hover {{background-color: {COLORS['set_code_button_hover']};}}")
         button_layout.addWidget(self.set_button)
         set_drop_shadow(self.set_button, opacity=150)
 
@@ -323,12 +323,7 @@ class MainWindow(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        shadow_blur_radius = 10
-        shadow_offset_x = 4
-        shadow_offset_y = 4
-        shadow_opacity = 150
-
-         # Custom Title Bar
+        # Custom Title Bar
         self.title_bar = QWidget(self)
         self.title_bar.setFixedHeight(self.title_bar_height)
         self.title_bar.setAttribute(Qt.WA_StyledBackground, True) 
@@ -337,7 +332,7 @@ class MainWindow(QWidget):
         title_layout.setSpacing(0)
 
         self.title_label = QLabel("iMShare")
-        self.title_label.setStyleSheet(f"color: {colors['title_bar_button_text']}; font-size: 12px;")
+        self.title_label.setStyleSheet(f"color: {COLORS['title_bar_button_text']}; font-size: 12px;")
         title_layout.addWidget(self.title_label)
         self.title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         title_layout.setAlignment(self.title_label, Qt.AlignCenter)  
@@ -361,7 +356,7 @@ class MainWindow(QWidget):
         queue_area_layout = QVBoxLayout()
         self.send_file_button = QPushButton("Send File")
         self.send_file_button.clicked.connect(self.open_file_dialog)
-        self.send_file_color = colors["send_button_color"]
+        self.send_file_color = COLORS["send_button_color"]
         self.set_button_style(self.send_file_button, self.send_file_color, rounded=True)
         queue_area_layout.addWidget(self.send_file_button)
         set_drop_shadow(self.send_file_button, opacity=150)
@@ -370,14 +365,14 @@ class MainWindow(QWidget):
         self.queue_layout.setAlignment(Qt.AlignTop)
         self.file_queue_list = QListWidget()
         self.file_queue_list.setStyleSheet(
-            f"QListWidget {{background-color: {colors['queue_background']};color: {colors['queue_text']};border: {colors['queue_border']};border-radius: 10px;padding: 5px;outline: 0;}}")
+            f"QListWidget {{background-color: {COLORS['queue_background']};color: {COLORS['queue_text']};border: {COLORS['queue_border']};border-radius: 10px;padding: 5px;outline: 0;}}")
         self.file_queue_list.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.file_queue_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.file_queue_list.setVerticalScrollBar(ModernScrollBar())
         self.file_queue_list.setMaximumWidth(200)
         self.file_queue_list.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.queue_layout.addWidget(self.file_queue_list)
-        set_drop_shadow(self.file_queue_list, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.file_queue_list, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
 
         queue_area_layout.addLayout(self.queue_layout)
         content_layout.addLayout(queue_area_layout)
@@ -392,13 +387,13 @@ class MainWindow(QWidget):
         self.file_name_label.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
         self.file_name_label.setAlignment(Qt.AlignCenter)
         self.file_info_layout.addWidget(self.file_name_label)
-        set_drop_shadow(self.file_name_label, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.file_name_label, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
 
         self.file_size_label = QLabel("")
-        self.file_size_label.setStyleSheet(f"color: {colors['time_speed_text']}; font-size: 10px; font-style: italic")
+        self.file_size_label.setStyleSheet(f"color: {COLORS['time_speed_text']}; font-size: 10px; font-style: italic")
         self.file_size_label.setAlignment(Qt.AlignCenter)
         self.file_info_layout.addWidget(self.file_size_label)
-        set_drop_shadow(self.file_size_label, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.file_size_label, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
 
         content_layout_inner.addLayout(self.file_info_layout)
 
@@ -410,18 +405,18 @@ class MainWindow(QWidget):
 
         self.path_entry = QLineEdit()
         self.path_entry.setStyleSheet(
-            f"QLineEdit {{background-color: {colors['path_entry_background']};color: {colors['path_entry_text']};border: 2px solid {colors['path_entry_border']};border-radius: 10px;padding: 5px;}}"
+            f"QLineEdit {{background-color: {COLORS['path_entry_background']};color: {COLORS['path_entry_text']};border: 2px solid {COLORS['path_entry_border']};border-radius: 10px;padding: 5px;}}"
         )
         path_layout.addWidget(self.path_entry)
-        set_drop_shadow(self.path_entry, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.path_entry, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
 
         self.clear_path_button = QPushButton("🗑")
         self.clear_path_button.clicked.connect(self.clear_all)
         self.clear_path_button.setFixedWidth(30)
         self.clear_path_button.setStyleSheet(
-            f"QPushButton {{background-color: {colors['clear_button_background']};color: white;border: 2px solid {colors['path_entry_border']};border-radius: 10px;padding: 5px;}}\n            QPushButton:hover {{background-color: {colors['clear_button_hover']};}}")
+            f"QPushButton {{background-color: {COLORS['clear_button_background']};color: white;border: 2px solid {COLORS['path_entry_border']};border-radius: 10px;padding: 5px;}}\n            QPushButton:hover {{background-color: {COLORS['clear_button_hover']};}}")
         path_layout.addWidget(self.clear_path_button)
-        set_drop_shadow(self.clear_path_button, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.clear_path_button, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
 
         content_layout_inner.addLayout(path_layout)
 
@@ -432,58 +427,55 @@ class MainWindow(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(20)
         self.progress_bar.setStyleSheet(
-            f"QProgressBar {{border: 2px solid {colors['progress_bar_border']};border-radius: 5px;background-color: {colors['progress_bar_background']};text-align: center;color: {colors['progress_bar_text']};font-size: 14px;}} QProgressBar::chunk {{background-color: {colors['progress_bar_chunk']};border-radius: 10px;}}")
+            f"QProgressBar {{border: 2px solid {COLORS['progress_bar_border']};border-radius: 5px;background-color: {COLORS['progress_bar_background']};text-align: center;color: {COLORS['progress_bar_text']};font-size: 14px;}} QProgressBar::chunk {{background-color: {COLORS['progress_bar_chunk']};border-radius: 10px;}}")
         self.progress_bar.setValue(0)
         content_layout_inner.addWidget(self.progress_bar)
-        set_drop_shadow(self.progress_bar, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.progress_bar, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
 
         self.progress_info_layout = QHBoxLayout()
         self.progress_info_layout.setAlignment(Qt.AlignCenter)
 
         self.time_remaining_label = QLabel("")
-        self.time_remaining_label.setStyleSheet(f"color: {colors['time_speed_text']}; font-size: 10px; font-style: italic")
+        self.time_remaining_label.setStyleSheet(f"color: {COLORS['time_speed_text']}; font-size: 10px; font-style: italic")
         self.time_remaining_label.setAlignment(Qt.AlignCenter)
         self.progress_info_layout.addWidget(self.time_remaining_label)
-        set_drop_shadow(self.time_remaining_label, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.time_remaining_label, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
 
         self.speed_label = QLabel("")
-        self.speed_label.setStyleSheet(f"color: {colors['time_speed_text']}; font-size: 10px; font-style: italic")
+        self.speed_label.setStyleSheet(f"color: {COLORS['time_speed_text']}; font-size: 10px; font-style: italic")
         self.speed_label.setAlignment(Qt.AlignCenter)
         self.progress_info_layout.addWidget(self.speed_label)
-        set_drop_shadow(self.speed_label, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.speed_label, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
 
         content_layout_inner.addLayout(self.progress_info_layout)
         
-
         self.output_text = QTextEdit()
         self.output_text.setStyleSheet(
-            f"QTextEdit {{background-color: {colors['output_text_background']};color: {colors['output_text_color']};border: 2px solid {colors['output_text_border']};border-radius: 10px;padding: 5px;}}"
+            f"QTextEdit {{background-color: {COLORS['output_text_background']};color: {COLORS['output_text_color']};border: 2px solid {COLORS['output_text_border']};border-radius: 10px;padding: 5px;}}"
         )
         self.output_text.setVerticalScrollBar(ModernScrollBar())
         self.output_text.setHorizontalScrollBar(ModernScrollBar())
         self.output_text.setFixedHeight(80)
         self.output_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         content_layout_inner.addWidget(self.output_text)
-        set_drop_shadow(self.output_text, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.output_text, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
 
         spacer = QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
         content_layout_inner.addItem(spacer)
 
-
         self.status_frame = QFrame()
-        self.status_frame.setStyleSheet(f"background-color: {colors['status_frame_background']}; border-radius: 10px;")
+        self.status_frame.setStyleSheet(f"background-color: {COLORS['status_frame_background']}; border-radius: 10px;")
         self.status_layout = QHBoxLayout(self.status_frame)
         self.status_layout.setAlignment(Qt.AlignCenter)
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet(
-            f"color: {colors['status_text']}; font-size: 14px; text-shadow: -1px -1px 0 {colors['status_shadow']}, 1px -1px 0 {colors['status_shadow']}, -1px 1px 0 {colors['status_shadow']}, 1px 1px 0 {colors['status_shadow']};")
+            f"color: {COLORS['status_text']}; font-size: 14px; text-shadow: -1px -1px 0 {COLORS['status_shadow']}, 1px -1px 0 {COLORS['status_shadow']}, -1px 1px 0 {COLORS['status_shadow']}, 1px 1px 0 {COLORS['status_shadow']};")
 
         self.status_layout.addWidget(self.status_label)
-        set_drop_shadow(self.status_label, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
+        set_drop_shadow(self.status_label, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
         content_layout_inner.addWidget(self.status_frame)
-        set_drop_shadow(self.status_frame, shadow_blur_radius, shadow_offset_x, shadow_offset_y, shadow_opacity)
-        
+        set_drop_shadow(self.status_frame, SHADOW_BLUR_RADIUS, SHADOW_OFFSET_X, SHADOW_OFFSET_Y, SHADOW_OPACITY)
         
         content_layout.addLayout(content_layout_inner)
         
@@ -495,8 +487,6 @@ class MainWindow(QWidget):
         self.set_rounded_window()
         self.set_gradient_background()
         
-
-
         self.active_threads = []
         self.dot_animation_timer = QTimer(self)
         self.dot_animation_timer.timeout.connect(self.update_dots)
@@ -523,9 +513,9 @@ class MainWindow(QWidget):
 
         self.app_context_menu_style = f"""
             QMenu {{
-                background-color: {colors['app_context_menu_background']};
-                color: {colors['app_context_menu_text']};
-                border: 1px solid {colors['app_context_menu_border']};
+                background-color: {COLORS['app_context_menu_background']};
+                color: {COLORS['app_context_menu_text']};
+                border: 1px solid {COLORS['app_context_menu_border']};
                 border-radius: 10px;
             }}
             QMenu::item {{
@@ -535,7 +525,7 @@ class MainWindow(QWidget):
                 text-align: center;
             }}
             QMenu::item:selected {{
-                background-color: {colors['app_context_menu_selected']};
+                background-color: {COLORS['app_context_menu_selected']};
             }}
             QMenu::item::text {{
                 padding-right: 20px;
@@ -563,11 +553,11 @@ class MainWindow(QWidget):
         event.acceptProposedAction()
 
     def set_title_bar_button_style(self, button):
-        button_color = colors["minimize_button_color"] if button == self.minimize_button else colors["close_button_color"]
+        button_color = COLORS["minimize_button_color"] if button == self.minimize_button else COLORS["close_button_color"]
 
         button.setStyleSheet(
-            f"QPushButton {{background-color: transparent; color: {button_color}; border: none; border-radius: 15px;padding: 0px; font-size: {colors['title_bar_button_font_size']};}}"
-            f"QPushButton:hover {{background-color: {colors['title_bar_button_hover_color']}; border: {colors['title_bar_button_hover_border_size']}px solid {colors['title_bar_button_border']}; padding: 0px; min-width: 30px; min-height: 30px;}}")
+            f"QPushButton {{background-color: transparent; color: {button_color}; border: none; border-radius: 15px;padding: 0px; font-size: {COLORS['title_bar_button_font_size']};}}"
+            f"QPushButton:hover {{background-color: {COLORS['title_bar_button_hover_color']}; border: {COLORS['title_bar_button_hover_border_size']}px solid {COLORS['title_bar_button_border']}; padding: 0px; min-width: 30px; min-height: 30px;}}")
         
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and event.y() < self.title_bar_height:
@@ -605,8 +595,8 @@ class MainWindow(QWidget):
         
     def set_gradient_background(self):
         gradient = QLinearGradient(0, 0, self.width(), self.height())
-        gradient.setColorAt(0, QColor(colors["background_gradient_start"]))
-        gradient.setColorAt(1, QColor(colors["background_gradient_end"]))
+        gradient.setColorAt(0, QColor(COLORS["background_gradient_start"]))
+        gradient.setColorAt(1, QColor(COLORS["background_gradient_end"]))
         
         palette = self.palette()
         palette.setBrush(self.backgroundRole(), QBrush(gradient))
@@ -646,7 +636,7 @@ class MainWindow(QWidget):
 
     def update_progress_bar(self, progress, color, is_hashing):
         self.progress_bar.setStyleSheet(
-            f"""QProgressBar {{border: 2px solid {colors['progress_bar_border']};border-radius: 5px;background-color: {colors['progress_bar_background']};text-align: center;color: {colors['progress_bar_text']};font-size: 14px;}}
+            f"""QProgressBar {{border: 2px solid {COLORS['progress_bar_border']};border-radius: 5px;background-color: {COLORS['progress_bar_background']};text-align: center;color: {COLORS['progress_bar_text']};font-size: 14px;}}
              QProgressBar::chunk {{background-color: {color};border-radius: 10px;}}""")
         self.progress_bar.setValue(progress)
 
@@ -691,7 +681,7 @@ class MainWindow(QWidget):
         self.speed_label.setText("")
         self.time_remaining_label.setText("")
         self.dot_animation_timer.stop()
-        self.clear_message_timer.start(3000)
+        self.clear_message_timer.start(CLEAR_MESSAGE_TIMEOUT)
         self.is_sending = False
         self.current_file = None
 
@@ -703,7 +693,7 @@ class MainWindow(QWidget):
 
     def update_animated_status(self, message, color):
         self.current_status_message = message
-        shadow_color = colors["status_shadow"]
+        shadow_color = COLORS["status_shadow"]
         shadow_style = f"text-shadow: -1px -1px 0 {shadow_color}, 1px -1px 0 {shadow_color}, -1px 1px 0 {shadow_color}, 1px 1px 0 {shadow_color};"
         self.status_label.setFont(QFont("Arial", 12, QFont.Normal))
 
@@ -718,7 +708,7 @@ class MainWindow(QWidget):
         self.dot_count = 0
         self.update_dots()
         if "Loading..." in message or "Uploading file..." in message:
-            self.dot_animation_timer.start(500)
+            self.dot_animation_timer.start(DOT_ANIMATION_INTERVAL)
         else:
             self.dot_animation_timer.stop()
 
@@ -739,7 +729,7 @@ class MainWindow(QWidget):
 
     def set_button_style(self, button, color, rounded=False):
         border_radius = "10px" if rounded else "0px"
-        button.setStyleSheet(f"""QPushButton {{background-color: {colors["send_button_background"]}; color: white; border: 2px solid {colors["send_button_border"]}; border-radius: {border_radius}; padding: 10px 20px; font-size: 12px; min-width: 150px;}}
+        button.setStyleSheet(f"""QPushButton {{background-color: {COLORS["send_button_background"]}; color: white; border: 2px solid {COLORS["send_button_border"]}; border-radius: {border_radius}; padding: 10px 20px; font-size: 12px; min-width: 150px;}}
                                 QPushButton:hover {{background-color: {color};}}
                                 QPushButton:pressed {{background-color: #333;}}""")
 
@@ -831,8 +821,8 @@ class MainWindow(QWidget):
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r') as file:
                     return json.load(file)
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logging.error(f"Could not load settings: {e}")
         return {}
 
     def save_code_to_json(self, code):
@@ -842,7 +832,7 @@ class MainWindow(QWidget):
             with open(self.config_file, 'w') as file:
                 json.dump(self.settings, file, indent=4)
         except Exception as e:
-            print(f"Failed to save settings: {e}")
+            logging.error(f"Failed to save settings: {e}")
         self.process_pending_queue()
 
     def process_pending_queue(self):
