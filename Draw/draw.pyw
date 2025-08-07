@@ -41,8 +41,8 @@ class DrawingApp:
         self.icons_path = ICONS_PATH
 
         # Get screen dimensions for the current monitor
-        self.screen_width, self.screen_height = self._get_monitor_dimensions()
-        master.geometry(f"{self.screen_width}x{self.screen_height}+0+0")
+        self.screen_width, self.screen_height, x, y = self._get_monitor_dimensions()
+        master.geometry(f"{self.screen_width}x{self.screen_height}+{x}+{y}")
 
         master.overrideredirect(True)
         master.attributes('-topmost', True)
@@ -96,13 +96,15 @@ class DrawingApp:
             monitor_info = MONITORINFO()
             monitor_info.cbSize = ctypes.sizeof(monitor_info)
             ctypes.windll.user32.GetMonitorInfoA(monitor, ctypes.byref(monitor_info))
+            x = monitor_info.rcMonitor.left
+            y = monitor_info.rcMonitor.top
             width = monitor_info.rcMonitor.right - monitor_info.rcMonitor.left
             height = monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top
-            return width, height
+            return width, height, x, y
         except Exception as e:
             logging.error(f"Error in multi-monitor setup: {e}")
             # Fallback to primary screen dimensions
-            return self.master.winfo_screenwidth(), self.master.winfo_screenheight()
+            return self.master.winfo_screenwidth(), self.master.winfo_screenheight(), 0, 0
 
     def _create_canvas(self):
         """Create the main canvas and display the initial image."""
