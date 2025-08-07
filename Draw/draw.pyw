@@ -40,7 +40,9 @@ class DrawingApp:
         self.master = master
         self.icons_path = ICONS_PATH
         self._setup_multimonitor()
-        master.attributes('-fullscreen', True, '-topmost', True, '-alpha', 0.7)
+        master.overrideredirect(True)
+        master.attributes('-topmost', True)
+        master.attributes('-alpha', 0.7)
         master.configure(bg=COLOR_BLACK)
         ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
 
