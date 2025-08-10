@@ -555,7 +555,6 @@ class MainWindow(QWidget):
         common_args = [
             "--no-warnings",
             "--no-playlist",
-            "--progress",
             "--progress-template", "JULES_PROGRESS:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "--print", "filename"
         ]
