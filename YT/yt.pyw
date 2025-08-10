@@ -39,6 +39,7 @@ class CommandExecutor(QThread):
     output_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(int, bool)
     progress_signal = pyqtSignal(int, int)
+    status_update_signal = pyqtSignal(int, str, str)
     item_id_signal = pyqtSignal(int)
     filepath_signal = pyqtSignal(int, str)
 
@@ -47,11 +48,11 @@ class CommandExecutor(QThread):
         self.command = command
         self.item_id = item_id
         self.process = None
-        self.download_phase = 0 # 0=video, 1=audio
 
     def run(self):
         self.item_id_signal.emit(self.item_id)
         filepath = None
+        all_output = []
         try:
             self.process = subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             universal_newlines=True, encoding='utf-8', errors='replace',
@@ -59,34 +60,43 @@ class CommandExecutor(QThread):
                                             bufsize=1, env=get_subprocess_env())
 
             for line in iter(self.process.stdout.readline, ''):
-                self.output_signal.emit(line)
+                line = line.strip()
+                if not line:
+                    continue
 
-                # Check for download destination to switch phase
-                dest_match = re.search(r'[download]\s+Destination:\s+(.*)', line)
-                if dest_match:
-                    filename = dest_match.group(1).strip()
-                    # A simple heuristic: webm/m4a/opus are usually audio-only containers from yt-dlp
-                    if any(ext in filename for ext in ['.webm', '.m4a', '.opus']):
-                        self.download_phase = 1
+                all_output.append(line)
 
-                # Check for progress
-                progress_match = re.search(r'[download]\s+([\d\.]+)\%', line)
-                if progress_match:
-                    percent = int(float(progress_match.group(1)))
-                    # Map 0-100 of video to 0-50, and 0-100 of audio to 50-100
-                    progress = (percent // 2) + (50 * self.download_phase)
-                    self.progress_signal.emit(self.item_id, progress)
-
-                # Check for final merged file path
-                merge_match = re.search(r'\[Merger\]\\s+Merging formats into \"(.*)\"', line)
-                if merge_match:
-                    filepath = merge_match.group(1).strip()
-                
-                audio_extract_match = re.search(r'[ExtractAudio]\s+Destination:\s+(.*)', line)
-                if audio_extract_match:
-                    filepath = audio_extract_match.group(1).strip()
+                if line.startswith("JULES_PROGRESS:"):
+                    line_content = line.replace("JULES_PROGRESS:", "").strip()
+                    parts = line_content.split('|')
+                    if len(parts) == 3:
+                        percent_str, speed_str, eta_str = parts
+                        try:
+                            percent = int(float(percent_str.replace('%','').strip()))
+                            self.progress_signal.emit(self.item_id, percent)
+                            self.status_update_signal.emit(self.item_id, speed_str.strip(), eta_str.strip())
+                        except (ValueError, IndexError):
+                            pass  # Ignore parsing errors
+                    else: # Fallback for just percentage
+                        percent_str = line_content.replace("%", "").strip()
+                        try:
+                            percent = int(float(percent_str))
+                            self.progress_signal.emit(self.item_id, percent)
+                        except ValueError:
+                            pass
+                else:
+                    self.output_signal.emit(line + '\n')
 
             self.process.wait()
+
+            # The filename is the last non-empty line that doesn't start with our progress prefix
+            if all_output:
+                for out_line in reversed(all_output):
+                    # yt-dlp might print some warnings/errors to stdout, so we check if the path is a file
+                    if out_line and not out_line.startswith("JULES_PROGRESS:") and os.path.isfile(out_line):
+                        filepath = out_line
+                        break
+
             success = self.process.returncode == 0
             if success:
                 self.progress_signal.emit(self.item_id, 100)
@@ -106,7 +116,7 @@ class CommandExecutor(QThread):
 
 class ThumbnailFetcher(QThread):
     thumbnail_loaded = pyqtSignal(QPixmap)
-    title_loaded = pyqtSignal(str, bool, str, int)
+    info_loaded = pyqtSignal(dict, bool, str, int)
     error_signal = pyqtSignal(int, str)
 
     def __init__(self, url, is_audio, item_id, parent=None):
@@ -125,8 +135,7 @@ class ThumbnailFetcher(QThread):
             if info_process.returncode == 0:
                 try:
                     info_json = json.loads(info_out)
-                    title = info_json.get('title', 'No title found')
-                    self.title_loaded.emit(title, self.is_audio, self.url, self.item_id)
+                    self.info_loaded.emit(info_json, self.is_audio, self.url, self.item_id)
                     thumbnail_url = info_json.get('thumbnail')
                     if thumbnail_url:
                         with urllib.request.urlopen(thumbnail_url) as response:
@@ -188,8 +197,9 @@ class ModernScrollBar(QScrollBar):
         ''')
 
 class DownloadItemWidget(QWidget):
-    def __init__(self, title, parent=None):
+    def __init__(self, title, item, parent=None):
         super().__init__(parent)
+        self.item = item
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(5, 5, 5, 5)
         self.layout.setSpacing(2)
@@ -211,18 +221,11 @@ class DownloadItemWidget(QWidget):
 
     def set_title(self, text):
         self.title_label.setToolTip(text)
-        try:
-            base, ext = os.path.splitext(text)
-            font_metrics = self.title_label.fontMetrics()
-            available_width = 220 - 20 # list width - margins
-            elided_text = font_metrics.elidedText(base, Qt.ElideRight, available_width)
-            if elided_text != base:
-                # It was elided, but elidedText is for one line. Let's just set the text and let word wrap handle it.
-                # The better fix is in the main window updating the size hint.
-                pass
-        except Exception:
-            pass
         self.title_label.setText(text)
+        # After setting text, the widget's own sizeHint will change.
+        # We need to inform the QListWidgetItem to update its size.
+        if self.item:
+            self.item.setSizeHint(self.sizeHint())
 
     def set_progress(self, value):
         self.progress_bar.setValue(value)
@@ -251,6 +254,8 @@ class MainWindow(QWidget):
         self.downloaded_files = {}
         self.download_widgets = {}
         self.active_threads = []
+        self.current_preview_url = None
+        self.current_preview_info = {}
 
         self.BG_COLOR = "#28252b"
         self.TEXT_COLOR = "#bfb8dd"
@@ -287,6 +292,7 @@ class MainWindow(QWidget):
     def check_ffmpeg(self):
         self.ffmpeg_checker = FFmpegCheckThread(self)
         self.ffmpeg_checker.finished.connect(self.on_ffmpeg_check_finished)
+        self.ffmpeg_checker.finished.connect(self.on_thread_finished)
         self.active_threads.append(self.ffmpeg_checker)
         self.ffmpeg_checker.start()
 
@@ -442,14 +448,14 @@ class MainWindow(QWidget):
             f"QListWidget {{ background-color: {self.ACCENT_COLOR}; border: none; border-radius: 10px; color: {self.TEXT_COLOR}; padding: 5px; }}"
             f"QListWidget::item {{ background-color: transparent; border-radius: 8px; padding: 2px; margin: 2px; }}"
             f"QListWidget::item:hover {{ background-color: {self.BG_COLOR}; }}"
-            f"QListWidget::item:selected {{ background-color: {self.VIDEO_COLOR}; color: white; }}"
+            f"QListWidget::item:selected {{ background-color: {self.VIDEO_COLOR}; color: white; border: 1px solid {self.TEXT_COLOR}; }}"
             f"QPushButton#controlBtn {{ background-color: transparent; color: #bfb8dd; border: none; font-size: 14px; font-weight: bold; }}"
             f"QPushButton#controlBtn:hover {{ color: #ff5555; }}"
             f"QPushButton#settingsBtn {{ background-color: transparent; color: #bfb8dd; border: none; font-size: 18px; }}"
             f"QPushButton#settingsBtn::menu-indicator {{ image: none; }}"
             f"QMenu {{ background-color: {self.BG_COLOR}; color: {self.TEXT_COLOR}; border: 1px solid {self.ACCENT_COLOR}; }}"
             f"QMenu::item:selected {{ background-color: {self.VIDEO_COLOR}; }}"
-            f"QProgressBar {{ border: none; border-radius: 5px; background-color: #141316; text-align: center; color: white; font-size: 10px; font-weight: bold; }}"
+            f"QProgressBar {{ border: none; border-radius: 5px; background-color: {self.BG_COLOR}; text-align: center; color: white; font-size: 10px; font-weight: bold; }}"
             f"QProgressBar::chunk:horizontal[value_is_audio=\"false\"] {{ background-color: {self.VIDEO_COLOR}; border-radius: 5px; }}"
             f"QProgressBar::chunk:horizontal[value_is_audio=\"true\"] {{ background-color: {self.AUDIO_COLOR}; border-radius: 5px; }}"
         )
@@ -461,10 +467,10 @@ class MainWindow(QWidget):
     def set_audio_quality(self, quality):
         self.audio_quality = self.AUDIO_QUALITY_MAP[quality]
 
-    def apply_shadow(self, widget, blur=15, y_offset=3):
+    def apply_shadow(self, widget, blur=20, y_offset=5):
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(blur)
-        shadow.setColor(QColor(0, 0, 0, 100))
+        shadow.setColor(QColor(0, 0, 0, 160))
         shadow.setOffset(0, y_offset)
         widget.setGraphicsEffect(shadow)
 
@@ -476,12 +482,17 @@ class MainWindow(QWidget):
 
     def on_url_changed(self, url):
         if url.startswith("http"):
+            # Clear previous preview info
+            self.current_preview_url = None
+            self.current_preview_info = {}
             self.thumbnail_label.setPixmap(QPixmap())
             self.title_label.setText("Fetching title...")
+
             preview_fetcher = ThumbnailFetcher(url, False, -1, self)
             preview_fetcher.thumbnail_loaded.connect(self.set_thumbnail)
-            preview_fetcher.title_loaded.connect(lambda title, *args: self.title_label.setText(title))
+            preview_fetcher.info_loaded.connect(self.on_preview_info_loaded)
             preview_fetcher.error_signal.connect(lambda id, err: self.title_label.setText(err) if id == -1 else None)
+            preview_fetcher.finished.connect(self.on_thread_finished)
             self.active_threads.append(preview_fetcher)
             preview_fetcher.start()
 
@@ -500,7 +511,7 @@ class MainWindow(QWidget):
         item = QListWidgetItem(self.queue_list)
         item.setData(Qt.UserRole, item_id)
 
-        widget = DownloadItemWidget(f"{prefix} Fetching title...")
+        widget = DownloadItemWidget(f"{prefix} Starting...", item)
         widget.progress_bar.setProperty("value_is_audio", is_audio)
         self.download_widgets[item_id] = widget
 
@@ -508,11 +519,20 @@ class MainWindow(QWidget):
         self.queue_list.insertItem(0, item)
         self.queue_list.setItemWidget(item, widget)
 
-        fetcher = ThumbnailFetcher(url, is_audio, item_id, self)
-        fetcher.title_loaded.connect(self.start_download)
-        fetcher.error_signal.connect(self.on_item_error)
-        self.active_threads.append(fetcher)
-        fetcher.start()
+        if url == self.current_preview_url and self.current_preview_info:
+            title = self.current_preview_info.get('title', 'No title found')
+            self.start_download(title, is_audio, url, item_id)
+        else:
+            widget.set_title(f"{prefix} Fetching info...")
+            fetcher = ThumbnailFetcher(url, is_audio, item_id, self)
+            # Use a lambda to unpack the info dict and pass the title to start_download
+            fetcher.info_loaded.connect(
+                lambda info, is_audio, url, item_id: self.start_download(info.get('title', 'No Title'), is_audio, url, item_id)
+            )
+            fetcher.error_signal.connect(self.on_item_error)
+            fetcher.finished.connect(self.on_thread_finished)
+            self.active_threads.append(fetcher)
+            fetcher.start()
 
     def start_download(self, title, is_audio, url, item_id):
         if item_id == -1: return
@@ -530,8 +550,15 @@ class MainWindow(QWidget):
                     item.setSizeHint(widget.sizeHint())
                     break
 
-        output_template = os.path.join(self.output_dir, f"{sanitized_title}.%(ext)s")
-        common_args = ["--no-warnings", "--newline", "--no-playlist"]
+        # Let yt-dlp handle the filename, and we'll get it back via --print
+        output_template = os.path.join(self.output_dir, f"%(title)s.%(ext)s")
+        common_args = [
+            "--no-warnings",
+            "--no-playlist",
+            "--progress",
+            "--progress-template", "JULES_PROGRESS:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "--print", "filename"
+        ]
 
         if is_audio:
             command = ["yt-dlp", *common_args, "-f", self.audio_quality, "-x", "--audio-format", "mp3", "--audio-quality", "0", url, "-o", output_template]
@@ -542,8 +569,10 @@ class MainWindow(QWidget):
         executor.output_signal.connect(self.output_text.insertPlainText)
         executor.finished_signal.connect(self.on_item_finished)
         executor.progress_signal.connect(self.on_item_progress)
+        executor.status_update_signal.connect(self.on_item_status_update)
         executor.item_id_signal.connect(self.on_item_start)
         executor.filepath_signal.connect(self.on_file_path_ready)
+        executor.finished.connect(self.on_thread_finished)
         self.active_threads.append(executor)
         self.download_queue.start_download(executor)
 
@@ -555,6 +584,12 @@ class MainWindow(QWidget):
     def on_item_progress(self, item_id, value):
         if item_id in self.download_widgets:
             self.download_widgets[item_id].set_progress(value)
+
+    def on_item_status_update(self, item_id, speed, eta):
+        if item_id in self.download_widgets:
+            widget = self.download_widgets[item_id]
+            if widget.progress_bar.value() < 100:
+                widget.set_status(f"{speed} | {eta}", self.TEXT_COLOR)
 
     def on_item_start(self, item_id):
         if item_id in self.download_widgets:
@@ -571,6 +606,17 @@ class MainWindow(QWidget):
 
     def on_file_path_ready(self, item_id, filepath):
         self.downloaded_files[item_id] = filepath
+
+    def on_preview_info_loaded(self, info, is_audio, url, item_id):
+        if item_id == -1:  # This is a preview fetch
+            self.title_label.setText(info.get('title', 'No title found'))
+            self.current_preview_url = url
+            self.current_preview_info = info
+
+    def on_thread_finished(self):
+        thread = self.sender()
+        if thread and thread in self.active_threads:
+            self.active_threads.remove(thread)
 
     def center_window(self):
         qr = self.frameGeometry()
