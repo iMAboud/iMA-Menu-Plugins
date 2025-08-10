@@ -27,6 +27,8 @@ class DownloadThread(QThread):
     error_signal = pyqtSignal(int, str)
     # Signal to emit the item_id when the thread starts
     item_id_signal = pyqtSignal(int)
+    # Signal for the definitive final filepath after all post-processing
+    final_filepath_signal = pyqtSignal(int, str)
 
     def __init__(self, url, ydl_opts, item_id, parent=None):
         super().__init__(parent)
@@ -37,17 +39,16 @@ class DownloadThread(QThread):
     def run(self):
         try:
             self.item_id_signal.emit(self.item_id)
-            # Add the progress hook to the options
+            # Add hooks to the options
             self.ydl_opts['progress_hooks'] = [self.progress_hook]
+            self.ydl_opts['postprocessor_hooks'] = [self.postprocessor_hook]
 
             with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
                 info_dict = ydl.extract_info(self.url, download=True)
-                # If there was an error, ydl.extract_info might return None
-                # or a dict without filepath for a failed download.
-                if not info_dict or 'filepath' not in info_dict:
-                    # This check is a fallback. The hook should report 'error' status.
-                    raise yt_dlp.utils.DownloadError("Download failed, no file produced.")
+                if not info_dict:
+                    raise yt_dlp.utils.DownloadError("Download failed, no info dictionary returned.")
 
+            # The 'finished' signal indicates the core download is done, but not necessarily post-processing
             info_dict['item_id'] = self.item_id
             self.finished_signal.emit(info_dict)
 
@@ -60,6 +61,13 @@ class DownloadThread(QThread):
         # Add item_id to the dictionary so the receiver knows which download it is
         d['item_id'] = self.item_id
         self.progress_signal.emit(d)
+
+    def postprocessor_hook(self, d):
+        # This hook is called after a post-processor has finished
+        if d['status'] == 'finished':
+            filepath = d.get('filepath') or d.get('info_dict', {}).get('filepath')
+            if filepath:
+                self.final_filepath_signal.emit(self.item_id, filepath)
 
 def is_windows():
     return platform.system() == "Windows"
@@ -187,11 +195,10 @@ class DownloadItemWidget(QWidget):
 
     def set_title(self, text):
         self.title_label.setToolTip(text)
-        self.title_label.setText(text)
-        # After setting text, the widget's own sizeHint will change.
-        # We need to inform the QListWidgetItem to update its size.
-        if self.item:
-            self.item.setSizeHint(self.sizeHint())
+        # Elide text to prevent long titles from breaking the layout
+        font_metrics = self.title_label.fontMetrics()
+        elided_text = font_metrics.elidedText(text, Qt.ElideRight, 200)
+        self.title_label.setText(elided_text)
 
     def set_progress(self, value):
         self.progress_bar.setValue(value)
@@ -387,7 +394,7 @@ class MainWindow(QWidget):
 
         self.output_text = QTextEdit()
         self.output_text.setVerticalScrollBar(ModernScrollBar())
-        self.output_text.setFixedHeight(120)
+        self.output_text.setFixedHeight(80)
         self.apply_shadow(self.output_text)
         right_layout.addWidget(self.output_text)
 
@@ -535,6 +542,7 @@ class MainWindow(QWidget):
         downloader.item_id_signal.connect(self.on_item_start)
         downloader.progress_signal.connect(self.on_item_progress_update)
         downloader.finished_signal.connect(self.on_item_finished)
+        downloader.final_filepath_signal.connect(self.on_final_filepath_ready)
         downloader.error_signal.connect(self.on_item_error)
         downloader.finished.connect(self.on_thread_finished)
 
@@ -554,6 +562,19 @@ class MainWindow(QWidget):
         if not widget: return
 
         if d['status'] == 'downloading':
+            # Determine stage based on codecs to provide better status feedback
+            info = d.get('info_dict', {})
+            vcodec = info.get('vcodec')
+            acodec = info.get('acodec')
+
+            stage = "Downloading"
+            if vcodec and vcodec != 'none' and acodec and acodec != 'none':
+                stage = "Muxed Stream"
+            elif vcodec and vcodec != 'none':
+                stage = "Video"
+            elif acodec and acodec != 'none':
+                stage = "Audio"
+
             total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
             if total_bytes > 0:
                 percent = (d.get('downloaded_bytes', 0) / total_bytes) * 100
@@ -563,10 +584,12 @@ class MainWindow(QWidget):
             eta = d.get('eta')
             speed_str = f"{speed / 1024 / 1024:.2f} MiB/s" if speed else "..."
             eta_str = f"{int(eta)}s" if eta is not None else "..."
-            widget.set_status(f"{speed_str} | {eta_str}", self.TEXT_COLOR)
+            widget.set_status(f"{stage}: {speed_str} | {eta_str}", self.TEXT_COLOR)
 
         elif d['status'] == 'finished':
-            widget.set_status("Finalizing...", "#50fa7b")
+            # This is the end of a single download stage.
+            # The post-processor hook will handle the final "Merging" or "Converting" status.
+            widget.set_status("Download stage complete...", "#aaa")
             widget.set_progress(100)
 
     def on_item_start(self, item_id):
@@ -578,12 +601,15 @@ class MainWindow(QWidget):
         item_id = info_dict.get('item_id')
         widget = self.download_widgets.get(item_id)
         if widget:
-            widget.set_status("Download Complete!", "#50fa7b")
+            # The final status is set by the postprocessor hook now, but we can set a generic one here
+            widget.set_status("Processing complete", "#50fa7b")
             widget.set_progress(100)
 
-        filepath = info_dict.get('filepath')
-        if filepath:
-            self.downloaded_files[item_id] = filepath
+    def on_final_filepath_ready(self, item_id, filepath):
+        self.downloaded_files[item_id] = filepath
+        widget = self.download_widgets.get(item_id)
+        if widget:
+            widget.set_status("Download Complete!", "#50fa7b")
 
     def on_preview_info_loaded(self, info, is_audio, url, item_id):
         if item_id == -1:  # This is a preview fetch
