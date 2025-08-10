@@ -16,6 +16,50 @@ from PyQt5.QtGui import QIcon, QFont, QPixmap, QClipboard, QColor, QPainter, QBr
 from PyQt5.QtCore import (
     Qt, QSize, QThread, pyqtSignal, QObject, QMutex, QPoint)
 import pyperclip
+import yt_dlp
+
+class DownloadThread(QThread):
+    # Signal to emit download progress dictionary
+    progress_signal = pyqtSignal(dict)
+    # Signal to emit the final info dictionary on success
+    finished_signal = pyqtSignal(dict)
+    # Signal to emit on an error, passing item_id and the error message
+    error_signal = pyqtSignal(int, str)
+    # Signal to emit the item_id when the thread starts
+    item_id_signal = pyqtSignal(int)
+
+    def __init__(self, url, ydl_opts, item_id, parent=None):
+        super().__init__(parent)
+        self.url = url
+        self.ydl_opts = ydl_opts
+        self.item_id = item_id
+
+    def run(self):
+        try:
+            self.item_id_signal.emit(self.item_id)
+            # Add the progress hook to the options
+            self.ydl_opts['progress_hooks'] = [self.progress_hook]
+
+            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+                info_dict = ydl.extract_info(self.url, download=True)
+                # If there was an error, ydl.extract_info might return None
+                # or a dict without filepath for a failed download.
+                if not info_dict or 'filepath' not in info_dict:
+                    # This check is a fallback. The hook should report 'error' status.
+                    raise yt_dlp.utils.DownloadError("Download failed, no file produced.")
+
+            info_dict['item_id'] = self.item_id
+            self.finished_signal.emit(info_dict)
+
+        except yt_dlp.utils.DownloadError as e:
+            self.error_signal.emit(self.item_id, str(e))
+        except Exception as e:
+            self.error_signal.emit(self.item_id, f"An unexpected error occurred: {e}")
+
+    def progress_hook(self, d):
+        # Add item_id to the dictionary so the receiver knows which download it is
+        d['item_id'] = self.item_id
+        self.progress_signal.emit(d)
 
 def is_windows():
     return platform.system() == "Windows"
@@ -35,84 +79,6 @@ def get_clipboard_link():
         return content
     return None
 
-class CommandExecutor(QThread):
-    output_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal(int, bool)
-    progress_signal = pyqtSignal(int, int)
-    status_update_signal = pyqtSignal(int, str, str)
-    item_id_signal = pyqtSignal(int)
-    filepath_signal = pyqtSignal(int, str)
-
-    def __init__(self, command, item_id, parent=None):
-        super().__init__(parent)
-        self.command = command
-        self.item_id = item_id
-        self.process = None
-
-    def run(self):
-        self.item_id_signal.emit(self.item_id)
-        filepath = None
-        all_output = []
-        try:
-            self.process = subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                            universal_newlines=True, encoding='utf-8', errors='replace',
-                                            creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0,
-                                            bufsize=1, env=get_subprocess_env())
-
-            for line in iter(self.process.stdout.readline, ''):
-                line = line.strip()
-                if not line:
-                    continue
-
-                all_output.append(line)
-
-                if line.startswith("JULES_PROGRESS:"):
-                    line_content = line.replace("JULES_PROGRESS:", "").strip()
-                    parts = line_content.split('|')
-                    if len(parts) == 3:
-                        percent_str, speed_str, eta_str = parts
-                        try:
-                            percent = int(float(percent_str.replace('%','').strip()))
-                            self.progress_signal.emit(self.item_id, percent)
-                            self.status_update_signal.emit(self.item_id, speed_str.strip(), eta_str.strip())
-                        except (ValueError, IndexError):
-                            pass  # Ignore parsing errors
-                    else: # Fallback for just percentage
-                        percent_str = line_content.replace("%", "").strip()
-                        try:
-                            percent = int(float(percent_str))
-                            self.progress_signal.emit(self.item_id, percent)
-                        except ValueError:
-                            pass
-                else:
-                    self.output_signal.emit(line + '\n')
-
-            self.process.wait()
-
-            # The filename is the last non-empty line that doesn't start with our progress prefix
-            if all_output:
-                for out_line in reversed(all_output):
-                    # yt-dlp might print some warnings/errors to stdout, so we check if the path is a file
-                    if out_line and not out_line.startswith("JULES_PROGRESS:") and os.path.isfile(out_line):
-                        filepath = out_line
-                        break
-
-            success = self.process.returncode == 0
-            if success:
-                self.progress_signal.emit(self.item_id, 100)
-                if filepath:
-                    self.filepath_signal.emit(self.item_id, filepath)
-
-            self.finished_signal.emit(self.item_id, success)
-
-            if not success:
-                self.output_signal.emit(f"\nError: Command exited with code {self.process.returncode}\n")
-        except Exception as e:
-             self.output_signal.emit(f"\nAn error occurred: {e}\n")
-             self.finished_signal.emit(self.item_id, False)
-        finally:
-            if self.process:
-                self.process.stdout.close()
 
 class ThumbnailFetcher(QThread):
     thumbnail_loaded = pyqtSignal(QPixmap)
@@ -127,30 +93,30 @@ class ThumbnailFetcher(QThread):
 
     def run(self):
         try:
-            info_process = subprocess.Popen(["yt-dlp", "--no-warnings", "--no-playlist", "--playlist-items", "1", "-j", self.url],
-                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-                                            creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0, env=get_subprocess_env())
-            info_out, info_err = info_process.communicate(timeout=20)
+            ydl_opts = {
+                'no_warnings': True,
+                'noplaylist': True,
+                'playlist_items': '1',
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(self.url, download=False)
 
-            if info_process.returncode == 0:
-                try:
-                    info_json = json.loads(info_out)
-                    self.info_loaded.emit(info_json, self.is_audio, self.url, self.item_id)
-                    thumbnail_url = info_json.get('thumbnail')
-                    if thumbnail_url:
-                        with urllib.request.urlopen(thumbnail_url) as response:
-                            thumbnail_data = response.read()
-                            pixmap = QPixmap()
-                            pixmap.loadFromData(thumbnail_data)
-                            if not pixmap.isNull():
-                                pixmap = pixmap.scaled(320, 180, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                                self.thumbnail_loaded.emit(pixmap)
-                except json.JSONDecodeError:
-                    self.error_signal.emit(self.item_id, "Error: Could not decode JSON")
-                except Exception as e:
-                    self.error_signal.emit(self.item_id, f"Error fetching thumbnail: {e}")
+            if info_dict:
+                self.info_loaded.emit(info_dict, self.is_audio, self.url, self.item_id)
+                thumbnail_url = info_dict.get('thumbnail')
+                if thumbnail_url:
+                    with urllib.request.urlopen(thumbnail_url) as response:
+                        thumbnail_data = response.read()
+                        pixmap = QPixmap()
+                        pixmap.loadFromData(thumbnail_data)
+                        if not pixmap.isNull():
+                            pixmap = pixmap.scaled(320, 180, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                            self.thumbnail_loaded.emit(pixmap)
             else:
-                self.error_signal.emit(self.item_id, f"yt-dlp error: {info_err.strip()}")
+                self.error_signal.emit(self.item_id, "Could not fetch video info.")
+
+        except yt_dlp.utils.DownloadError as e:
+            self.error_signal.emit(self.item_id, f"yt-dlp error: {e}")
         except Exception as e:
             self.error_signal.emit(self.item_id, f"Error loading thumbnail: {e}")
 
@@ -167,20 +133,20 @@ class DownloadQueue(QObject):
         if self.running_downloads < self.max_concurrent_downloads:
             self.running_downloads += 1
             self.mutex.unlock()
-            executor.finished_signal.connect(self.on_download_finished)
+            executor.finished.connect(self.on_executor_finished)
             executor.start()
         else:
             self.queue.append(executor)
             self.mutex.unlock()
 
-    def on_download_finished(self, item_id, success):
+    def on_executor_finished(self):
         self.mutex.lock()
         self.running_downloads -= 1
         if self.queue:
             executor = self.queue.pop(0)
             self.running_downloads += 1
             self.mutex.unlock()
-            executor.finished_signal.connect(self.on_download_finished)
+            executor.finished.connect(self.on_executor_finished)
             executor.start()
         else:
             self.mutex.unlock()
@@ -543,68 +509,81 @@ class MainWindow(QWidget):
         if widget:
             full_title = f"{prefix} {sanitized_title}"
             widget.set_title(full_title)
-            widget.set_status("Downloading...", self.TEXT_COLOR)
-            for i in range(self.queue_list.count()):
-                item = self.queue_list.item(i)
-                if item and item.data(Qt.UserRole) == item_id:
-                    item.setSizeHint(widget.sizeHint())
-                    break
+            widget.set_status("Preparing...", self.TEXT_COLOR)
 
-        # Let yt-dlp handle the filename, and we'll get it back via --print
-        output_template = os.path.join(self.output_dir, f"%(title)s.%(ext)s")
-        common_args = [
-            "--no-warnings",
-            "--no-playlist",
-            "--progress-template", "JULES_PROGRESS:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
-            "--print", "filename"
-        ]
+        output_template = os.path.join(self.output_dir, '%(title)s.%(ext)s')
+
+        ydl_opts = {
+            'outtmpl': output_template,
+            'noplaylist': True,
+            'no_warnings': True,
+            'quiet': True, # We use our own progress reporting
+        }
 
         if is_audio:
-            command = ["yt-dlp", *common_args, "-f", self.audio_quality, "-x", "--audio-format", "mp3", "--audio-quality", "0", url, "-o", output_template]
+            ydl_opts.update({
+                'format': self.audio_quality,
+                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
+            })
         else:
-            command = ["yt-dlp", *common_args, "-f", self.video_quality, "--merge-output-format", "mp4", url, "-o", output_template]
+            ydl_opts.update({
+                'format': self.video_quality,
+                'merge_output_format': 'mp4',
+            })
 
-        executor = CommandExecutor(command, item_id, self)
-        executor.output_signal.connect(self.output_text.insertPlainText)
-        executor.finished_signal.connect(self.on_item_finished)
-        executor.progress_signal.connect(self.on_item_progress)
-        executor.status_update_signal.connect(self.on_item_status_update)
-        executor.item_id_signal.connect(self.on_item_start)
-        executor.filepath_signal.connect(self.on_file_path_ready)
-        executor.finished.connect(self.on_thread_finished)
-        self.active_threads.append(executor)
-        self.download_queue.start_download(executor)
+        downloader = DownloadThread(url, ydl_opts, item_id, self)
+        downloader.item_id_signal.connect(self.on_item_start)
+        downloader.progress_signal.connect(self.on_item_progress_update)
+        downloader.finished_signal.connect(self.on_item_finished)
+        downloader.error_signal.connect(self.on_item_error)
+        downloader.finished.connect(self.on_thread_finished)
+
+        self.active_threads.append(downloader)
+        downloader.start()
 
     def on_item_error(self, item_id, error_message):
         if item_id in self.download_widgets:
             widget = self.download_widgets[item_id]
-            widget.set_status(error_message, "#ff5555")
+            widget.set_status(f"Error: {error_message[:40]}...", "#ff5555")
+            widget.title_label.setToolTip(error_message)
 
-    def on_item_progress(self, item_id, value):
-        if item_id in self.download_widgets:
-            self.download_widgets[item_id].set_progress(value)
 
-    def on_item_status_update(self, item_id, speed, eta):
-        if item_id in self.download_widgets:
-            widget = self.download_widgets[item_id]
-            if widget.progress_bar.value() < 100:
-                widget.set_status(f"{speed} | {eta}", self.TEXT_COLOR)
+    def on_item_progress_update(self, d):
+        item_id = d.get('item_id')
+        widget = self.download_widgets.get(item_id)
+        if not widget: return
+
+        if d['status'] == 'downloading':
+            total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+            if total_bytes > 0:
+                percent = (d.get('downloaded_bytes', 0) / total_bytes) * 100
+                widget.set_progress(int(percent))
+
+            speed = d.get('speed')
+            eta = d.get('eta')
+            speed_str = f"{speed / 1024 / 1024:.2f} MiB/s" if speed else "..."
+            eta_str = f"{int(eta)}s" if eta is not None else "..."
+            widget.set_status(f"{speed_str} | {eta_str}", self.TEXT_COLOR)
+
+        elif d['status'] == 'finished':
+            widget.set_status("Finalizing...", "#50fa7b")
+            widget.set_progress(100)
 
     def on_item_start(self, item_id):
         if item_id in self.download_widgets:
             widget = self.download_widgets[item_id]
             widget.set_status("Downloading...", self.TEXT_COLOR)
 
-    def on_item_finished(self, item_id, success):
-        if item_id in self.download_widgets:
-            widget = self.download_widgets[item_id]
-            if success:
-                widget.set_status("Download Complete!", "#50fa7b")
-            else:
-                widget.set_status("Download Failed.", "#ff5555")
+    def on_item_finished(self, info_dict):
+        item_id = info_dict.get('item_id')
+        widget = self.download_widgets.get(item_id)
+        if widget:
+            widget.set_status("Download Complete!", "#50fa7b")
+            widget.set_progress(100)
 
-    def on_file_path_ready(self, item_id, filepath):
-        self.downloaded_files[item_id] = filepath
+        filepath = info_dict.get('filepath')
+        if filepath:
+            self.downloaded_files[item_id] = filepath
 
     def on_preview_info_loaded(self, info, is_audio, url, item_id):
         if item_id == -1:  # This is a preview fetch
