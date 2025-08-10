@@ -27,6 +27,8 @@ class DownloadThread(QThread):
     error_signal = pyqtSignal(int, str)
     # Signal to emit the item_id when the thread starts
     item_id_signal = pyqtSignal(int)
+    # Signal for post-processing updates
+    postprocessing_signal = pyqtSignal(dict)
     # Signal for the definitive final filepath after all post-processing
     final_filepath_signal = pyqtSignal(int, str)
 
@@ -64,6 +66,9 @@ class DownloadThread(QThread):
 
     def postprocessor_hook(self, d):
         # This hook is called after a post-processor has finished
+        d['item_id'] = self.item_id
+        self.postprocessing_signal.emit(d)
+
         if d['status'] == 'finished':
             filepath = d.get('filepath') or d.get('info_dict', {}).get('filepath')
             if filepath:
@@ -128,36 +133,6 @@ class ThumbnailFetcher(QThread):
         except Exception as e:
             self.error_signal.emit(self.item_id, f"Error loading thumbnail: {e}")
 
-class DownloadQueue(QObject):
-    def __init__(self, max_concurrent_downloads=3):
-        super().__init__()
-        self.queue = []
-        self.running_downloads = 0
-        self.max_concurrent_downloads = max_concurrent_downloads
-        self.mutex = QMutex()
-
-    def start_download(self, executor):
-        self.mutex.lock()
-        if self.running_downloads < self.max_concurrent_downloads:
-            self.running_downloads += 1
-            self.mutex.unlock()
-            executor.finished.connect(self.on_executor_finished)
-            executor.start()
-        else:
-            self.queue.append(executor)
-            self.mutex.unlock()
-
-    def on_executor_finished(self):
-        self.mutex.lock()
-        self.running_downloads -= 1
-        if self.queue:
-            executor = self.queue.pop(0)
-            self.running_downloads += 1
-            self.mutex.unlock()
-            executor.finished.connect(self.on_executor_finished)
-            executor.start()
-        else:
-            self.mutex.unlock()
 
 class ModernScrollBar(QScrollBar):
     def __init__(self, parent=None):
@@ -171,41 +146,81 @@ class ModernScrollBar(QScrollBar):
         ''')
 
 class DownloadItemWidget(QWidget):
-    def __init__(self, title, item, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.item = item
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(5, 5, 5, 5)
-        self.layout.setSpacing(2)
+        self.title = "Starting..."
+        self.status = "Waiting..."
+        self.progress = 0
+        self.status_color = QColor("#aaa")
+        self.is_audio = False
 
-        self.title_label = QLabel(title)
-        self.title_label.setWordWrap(True)
-        self.layout.addWidget(self.title_label)
+        # Define colors directly here for painting
+        self.video_color = QColor("#9b59b6")
+        self.audio_color = QColor("#3498db")
+        self.text_color = QColor("#bfb8dd")
 
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedHeight(10)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(True)
-        self.progress_bar.setFormat('%p%')
-        self.layout.addWidget(self.progress_bar)
-
-        self.status_label = QLabel("Waiting...")
-        self.status_label.setStyleSheet("font-size: 10px; color: #aaa;")
-        self.layout.addWidget(self.status_label)
+        self.setToolTip(self.title)
+        self.setFixedHeight(60)
 
     def set_title(self, text):
-        self.title_label.setToolTip(text)
-        # Elide text to prevent long titles from breaking the layout
-        font_metrics = self.title_label.fontMetrics()
-        elided_text = font_metrics.elidedText(text, Qt.ElideRight, 200)
-        self.title_label.setText(elided_text)
+        self.title = text
+        self.setToolTip(text)
+        self.update()
 
     def set_progress(self, value):
-        self.progress_bar.setValue(value)
+        self.progress = value
+        self.update()
 
-    def set_status(self, text, color):
-        self.status_label.setText(text)
-        self.status_label.setStyleSheet(f"font-size: 10px; color: {color};")
+    def set_status(self, text, color_hex):
+        self.status = text
+        self.status_color = QColor(color_hex)
+        self.update()
+
+    def set_type(self, is_audio):
+        self.is_audio = is_audio
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Title
+        title_rect = QRect(5, 5, self.width() - 10, 20)
+        painter.setPen(self.text_color)
+        font = painter.font()
+        font.setBold(True)
+        painter.setFont(font)
+        elided_title = painter.fontMetrics().elidedText(self.title, Qt.ElideRight, title_rect.width())
+        painter.drawText(title_rect, Qt.AlignLeft | Qt.AlignVCenter, elided_title)
+
+        # Status
+        status_rect = QRect(5, 45, self.width() - 10, 12)
+        painter.setPen(self.status_color)
+        font.setBold(False)
+        font.setPointSize(8)
+        painter.setFont(font)
+        painter.drawText(status_rect, Qt.AlignLeft | Qt.AlignVCenter, self.status)
+
+        # Progress Bar
+        progress_bar_rect = QRect(5, 28, self.width() - 10, 12)
+        painter.setPen(Qt.NoPen)
+        # Background
+        painter.setBrush(QColor("#141316"))
+        painter.drawRoundedRect(progress_bar_rect, 6, 6)
+
+        # Chunk
+        chunk_width = (self.progress / 100.0) * progress_bar_rect.width()
+        chunk_rect = QRect(progress_bar_rect.x(), progress_bar_rect.y(), int(chunk_width), progress_bar_rect.height())
+        chunk_color = self.audio_color if self.is_audio else self.video_color
+        painter.setBrush(chunk_color)
+        painter.drawRoundedRect(chunk_rect, 6, 6)
+
+        # Text
+        painter.setPen(Qt.white)
+        font.setBold(True)
+        font.setPointSize(7)
+        painter.setFont(font)
+        painter.drawText(progress_bar_rect, Qt.AlignCenter, f"{self.progress}%")
 
 class FFmpegCheckThread(QThread):
     finished = pyqtSignal(bool)
@@ -253,14 +268,18 @@ class MainWindow(QWidget):
         self.video_quality = self.VIDEO_QUALITY_MAP["Highest"]
         self.audio_quality = self.AUDIO_QUALITY_MAP["Highest"]
 
+        self.load_config()
         self.check_ffmpeg()
         self.setup_ui()
         self.center_window()
         self.paste_link()
 
-        self.download_queue = DownloadQueue(max_concurrent_downloads=3)
         self.item_counter = 0
         self.queue_list.itemDoubleClicked.connect(self.open_downloaded_file)
+
+        self.url_debounce_timer = QTimer(self)
+        self.url_debounce_timer.setSingleShot(True)
+        self.url_debounce_timer.timeout.connect(self.trigger_thumbnail_fetch)
 
     def check_ffmpeg(self):
         self.ffmpeg_checker = FFmpegCheckThread(self)
@@ -332,6 +351,15 @@ class MainWindow(QWidget):
         title_bar_layout.addWidget(icon_label)
         title_bar_layout.addWidget(title_label)
         title_bar_layout.addWidget(settings_button)
+
+        dir_button = QPushButton("📁")
+        dir_button.setObjectName("dirBtn")
+        dir_button.setFixedSize(28, 28)
+        dir_button.setToolTip("Set Download Directory")
+        dir_button.clicked.connect(self.select_output_directory)
+        self.apply_shadow(dir_button)
+        title_bar_layout.addWidget(dir_button)
+
         title_bar_layout.addStretch()
         title_bar_layout.addWidget(minimize_button)
         title_bar_layout.addWidget(close_button)
@@ -403,7 +431,6 @@ class MainWindow(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(outer_layout)
 
-        self.output_dir = os.getcwd()
         self.set_stylesheet()
 
     def set_stylesheet(self):
@@ -422,8 +449,9 @@ class MainWindow(QWidget):
             f"QListWidget::item {{ background-color: transparent; border-radius: 8px; padding: 2px; margin: 2px; }}"
             f"QListWidget::item:hover {{ background-color: {self.BG_COLOR}; }}"
             f"QListWidget::item:selected {{ background-color: {self.VIDEO_COLOR}; color: white; border: 1px solid {self.TEXT_COLOR}; }}"
-            f"QPushButton#controlBtn {{ background-color: transparent; color: #bfb8dd; border: none; font-size: 14px; font-weight: bold; }}"
+            f"QPushButton#controlBtn, QPushButton#dirBtn {{ background-color: transparent; color: #bfb8dd; border: none; font-size: 14px; font-weight: bold; }}"
             f"QPushButton#controlBtn:hover {{ color: #ff5555; }}"
+            f"QPushButton#dirBtn:hover {{ color: #82e0aa; }}"
             f"QPushButton#settingsBtn {{ background-color: transparent; color: #bfb8dd; border: none; font-size: 18px; }}"
             f"QPushButton#settingsBtn::menu-indicator {{ image: none; }}"
             f"QMenu {{ background-color: {self.BG_COLOR}; color: {self.TEXT_COLOR}; border: 1px solid {self.ACCENT_COLOR}; }}"
@@ -454,20 +482,28 @@ class MainWindow(QWidget):
             self.on_url_changed(link)
 
     def on_url_changed(self, url):
-        if url.startswith("http"):
-            # Clear previous preview info
-            self.current_preview_url = None
-            self.current_preview_info = {}
-            self.thumbnail_label.setPixmap(QPixmap())
-            self.title_label.setText("Fetching title...")
+        # Start (or restart) the debounce timer on any text change
+        if "http" in url:
+            self.url_debounce_timer.start(500) # 500ms delay
 
-            preview_fetcher = ThumbnailFetcher(url, False, -1, self)
-            preview_fetcher.thumbnail_loaded.connect(self.set_thumbnail)
-            preview_fetcher.info_loaded.connect(self.on_preview_info_loaded)
-            preview_fetcher.error_signal.connect(lambda id, err: self.title_label.setText(err) if id == -1 else None)
-            preview_fetcher.finished.connect(self.on_thread_finished)
-            self.active_threads.append(preview_fetcher)
-            preview_fetcher.start()
+    def trigger_thumbnail_fetch(self):
+        url = self.url_entry.text()
+        if not url.startswith("http"):
+            return
+
+        # Clear previous preview info
+        self.current_preview_url = None
+        self.current_preview_info = {}
+        self.thumbnail_label.setPixmap(QPixmap())
+        self.title_label.setText("Fetching title...")
+
+        preview_fetcher = ThumbnailFetcher(url, False, -1, self)
+        preview_fetcher.thumbnail_loaded.connect(self.set_thumbnail)
+        preview_fetcher.info_loaded.connect(self.on_preview_info_loaded)
+        preview_fetcher.error_signal.connect(lambda id, err: self.title_label.setText(err) if id == -1 else None)
+        preview_fetcher.finished.connect(self.on_thread_finished)
+        self.active_threads.append(preview_fetcher)
+        preview_fetcher.start()
 
     def set_thumbnail(self, pixmap):
         self.thumbnail_label.setPixmap(pixmap)
@@ -484,8 +520,8 @@ class MainWindow(QWidget):
         item = QListWidgetItem(self.queue_list)
         item.setData(Qt.UserRole, item_id)
 
-        widget = DownloadItemWidget(f"{prefix} Starting...", item)
-        widget.progress_bar.setProperty("value_is_audio", is_audio)
+        widget = DownloadItemWidget()
+        widget.set_type(is_audio)
         self.download_widgets[item_id] = widget
 
         item.setSizeHint(widget.sizeHint())
@@ -543,6 +579,7 @@ class MainWindow(QWidget):
         downloader.progress_signal.connect(self.on_item_progress_update)
         downloader.finished_signal.connect(self.on_item_finished)
         downloader.final_filepath_signal.connect(self.on_final_filepath_ready)
+        downloader.postprocessing_signal.connect(self.on_item_postprocessing)
         downloader.error_signal.connect(self.on_item_error)
         downloader.finished.connect(self.on_thread_finished)
 
@@ -553,7 +590,7 @@ class MainWindow(QWidget):
         if item_id in self.download_widgets:
             widget = self.download_widgets[item_id]
             widget.set_status(f"Error: {error_message[:40]}...", "#ff5555")
-            widget.title_label.setToolTip(error_message)
+            widget.setToolTip(error_message)
 
 
     def on_item_progress_update(self, d):
@@ -592,6 +629,15 @@ class MainWindow(QWidget):
             widget.set_status("Download stage complete...", "#aaa")
             widget.set_progress(100)
 
+    def on_item_postprocessing(self, d):
+        item_id = d.get('item_id')
+        widget = self.download_widgets.get(item_id)
+        if not widget: return
+
+        if d['status'] == 'started' or d['status'] == 'processing':
+            postprocessor_name = d.get('postprocessor')
+            widget.set_status(f"Processing: {postprocessor_name}...", self.TEXT_COLOR)
+
     def on_item_start(self, item_id):
         if item_id in self.download_widgets:
             widget = self.download_widgets[item_id]
@@ -621,6 +667,25 @@ class MainWindow(QWidget):
         thread = self.sender()
         if thread and thread in self.active_threads:
             self.active_threads.remove(thread)
+
+    def select_output_directory(self):
+        directory = QFileDialog.getExistingDirectory(self, "Select Download Folder", self.output_dir)
+        if directory:
+            self.output_dir = directory
+            self.save_config()
+
+    def save_config(self):
+        config = {'output_dir': self.output_dir}
+        with open('config.json', 'w') as f:
+            json.dump(config, f, indent=4)
+
+    def load_config(self):
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+                self.output_dir = config.get('output_dir', os.getcwd())
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.output_dir = os.getcwd()
 
     def center_window(self):
         qr = self.frameGeometry()
