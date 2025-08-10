@@ -4,176 +4,149 @@ import platform
 import subprocess
 import re
 import json
-import logging
-import requests
-from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QLineEdit,
-                             QPushButton, QTextEdit, QVBoxLayout, QHBoxLayout,
-                             QSizePolicy, QProgressBar, QDesktopWidget, QScrollBar,
-                             QListWidget, QListWidgetItem, QMessageBox)
-from PyQt5.QtGui import QIcon, QFont, QPixmap, QClipboard, QColor
-from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QObject, QMutex, QWaitCondition
+import time
+import urllib.request
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QLabel, QLineEdit,
+    QPushButton, QTextEdit, QVBoxLayout, QHBoxLayout,
+    QSizePolicy, QProgressBar, QDesktopWidget, QScrollBar,
+    QListWidget, QListWidgetItem, QMessageBox, QFrame,
+    QGraphicsDropShadowEffect, QMenu, QAction, QActionGroup)
+from PyQt5.QtGui import QIcon, QFont, QPixmap, QClipboard, QColor, QPainter, QBrush, QPen, QFontMetrics
+from PyQt5.QtCore import (
+    Qt, QSize, QThread, pyqtSignal, QObject, QMutex, QPoint)
 import pyperclip
-
-# --- Constants ---
-APP_NAME = "iMA Menu: Downloader"
-APP_ID = "myappid"  # for Windows taskbar icon
-
-# --- Styles ---
-STYLE_SHEET = {
-    "MainWindow": "QWidget { background-color: #2b2b2b; }",
-    "CustomLabel": "QLabel { border-radius: 10px; background-color: #444; min-width: 200px; max-width: 300px; }",
-    "TitleLabel": "QLabel { color: white; }",
-    "URLLabel": "QLabel { color: white; }",
-    "QLineEdit": "QLineEdit { background-color: #444; color: white; border: 3px solid #555; border-radius: 10px; padding: 5px; } QLineEdit:focus { border: 3px solid teal; }",
-    "QPushButton_Paste": "QPushButton { background-color: #444; color: white; border: 3px solid teal; border-radius: 10px; padding: 1px; max-width: 30px; min-width: 30px; font-size: 18px; } QPushButton:hover { background-color: teal; } QPushButton:pressed{background-color: teal; } QPushButton:focus { border: 3px solid teal; }",
-    "QPushButton": "QPushButton { background-color: #444; color: white; border: 3px solid %button_color%; border-radius: 10px; padding: 10px 20px; font-size: 14px; min-width: 150px;} QPushButton:hover { background-color: %button_color%; border: 2px solid %button_color%; } QPushButton:pressed{background-color: %button_color%; border: 3px solid %button_color%;}",
-    "QProgressBar": "QProgressBar { border: 3px solid #555; border-radius: 10px; background-color: #333; text-align: center; color: white; font-size: 14px; height: 20px;} QProgressBar::chunk { background-color: %color%; margin: 1px; border-radius: 9px; }",
-    "QTextEdit": "QTextEdit { background-color: #333; color: lightgray; border: 1px solid #555; border-radius: 10px; padding: 5px; } QTextEdit:focus {border: 3px teal;} ",
-    "StatusLabel": "QLabel { color: white; font-style: italic; }",
-    "QueueListWidget": """
-        QListWidget {
-            background-color: #333;
-            color: white;
-            border: none;
-            outline: 0;
-        }
-        QListWidget::item {
-            background-color: #444;
-            border-radius: 10px;
-            padding: 10px;
-            margin: 5px;
-            color: white;
-            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
-        }
-        QListWidget::item:selected, QListWidget::item:hover {
-            background-color: #555;
-        }
-    """,
-    "ModernScrollBar": """
-        QScrollBar:vertical { background-color: transparent; width: 10px; margin: 0px 0px 0px 0px; border-radius: 10px; }
-        QScrollBar::handle:vertical { background-color: rgba(80, 80, 80, 150); min-height: 20px; border-radius: 10px; }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { background: none; }
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical{ background: none; border-radius: 10px;}
-    """
-}
-
-# --- Colors ---
-VIDEO_BUTTON_COLOR = "#3e284f"
-AUDIO_BUTTON_COLOR = "#28528d"
-STATUS_SUCCESS_COLOR = "green"
-STATUS_FAIL_COLOR = "red"
-STATUS_DOWNLOAD_COLOR = "yellow"
-
-# --- Settings ---
-MAX_CONCURRENT_DOWNLOADS = 2
-THUMBNAIL_SIZE = (200, 300)
-# --- End Constants ---
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def is_windows():
     return platform.system() == "Windows"
 
+def sanitize_filename(filename):
+    return re.sub(r'[\\/*?"<>|]', "", filename)
+
+def get_subprocess_env():
+    env = os.environ.copy()
+    env['PYTHONIOENCODING'] = 'utf-8'
+    env['LANG'] = 'en_US.UTF-8'
+    return env
+
+def get_clipboard_link():
+    content = pyperclip.paste()
+    if content and isinstance(content, str) and content.startswith("http"):
+        return content
+    return None
+
 class CommandExecutor(QThread):
     output_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal(bool)
-    progress_signal = pyqtSignal(int)
+    finished_signal = pyqtSignal(int, bool)
+    progress_signal = pyqtSignal(int, int)
     item_id_signal = pyqtSignal(int)
+    filepath_signal = pyqtSignal(int, str)
 
     def __init__(self, command, item_id, parent=None):
         super().__init__(parent)
         self.command = command
         self.item_id = item_id
         self.process = None
+        self.download_phase = 0 # 0=video, 1=audio
 
     def run(self):
         self.item_id_signal.emit(self.item_id)
+        filepath = None
         try:
-            creation_flags = subprocess.CREATE_NO_WINDOW if is_windows() else 0
-            self.process = subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, creationflags=creation_flags)
+            self.process = subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                            universal_newlines=True, encoding='utf-8', errors='replace',
+                                            creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0,
+                                            bufsize=1, env=get_subprocess_env())
+
             for line in iter(self.process.stdout.readline, ''):
                 self.output_signal.emit(line)
-                match = re.search(r'\[download\]\s+(\d+(\.\d+)?)%', line)
-                if match:
-                    self.progress_signal.emit(int(float(match.group(1))))
-            self.process.wait()
-            if self.process.returncode != 0:
-                self.output_signal.emit(f"\nError: Command exited with code {self.process.returncode}\n")
-            self.finished_signal.emit(self.process.returncode == 0)
-        except Exception as e:
-             logging.error(f"Failed to execute command: {e}")
-             self.output_signal.emit(f"\nAn error occurred: {e}\n")
-             self.finished_signal.emit(False)
-        finally:
-            if self.process and self.process.stdout:
-                self.process.stdout.close()
 
-def get_clipboard_link():
-    try:
-        clipboard_content = pyperclip.paste()
-        return clipboard_content if clipboard_content.startswith("http") else ""
-    except Exception as e:
-         logging.warning(f"Could not get clipboard content: {e}")
-         return ""
+                # Check for download destination to switch phase
+                dest_match = re.search(r'[download]\s+Destination:\s+(.*)', line)
+                if dest_match:
+                    filename = dest_match.group(1).strip()
+                    # A simple heuristic: webm/m4a/opus are usually audio-only containers from yt-dlp
+                    if any(ext in filename for ext in ['.webm', '.m4a', '.opus']):
+                        self.download_phase = 1
+
+                # Check for progress
+                progress_match = re.search(r'[download]\s+([\d\.]+)\%', line)
+                if progress_match:
+                    percent = int(float(progress_match.group(1)))
+                    # Map 0-100 of video to 0-50, and 0-100 of audio to 50-100
+                    progress = (percent // 2) + (50 * self.download_phase)
+                    self.progress_signal.emit(self.item_id, progress)
+
+                # Check for final merged file path
+                merge_match = re.search(r'\[Merger\]\\s+Merging formats into \"(.*)\"', line)
+                if merge_match:
+                    filepath = merge_match.group(1).strip()
+                
+                audio_extract_match = re.search(r'[ExtractAudio]\s+Destination:\s+(.*)', line)
+                if audio_extract_match:
+                    filepath = audio_extract_match.group(1).strip()
+
+            self.process.wait()
+            success = self.process.returncode == 0
+            if success:
+                self.progress_signal.emit(self.item_id, 100)
+                if filepath:
+                    self.filepath_signal.emit(self.item_id, filepath)
+
+            self.finished_signal.emit(self.item_id, success)
+
+            if not success:
+                self.output_signal.emit(f"\nError: Command exited with code {self.process.returncode}\n")
+        except Exception as e:
+             self.output_signal.emit(f"\nAn error occurred: {e}\n")
+             self.finished_signal.emit(self.item_id, False)
+        finally:
+            if self.process:
+                self.process.stdout.close()
 
 class ThumbnailFetcher(QThread):
     thumbnail_loaded = pyqtSignal(QPixmap)
-    title_loaded = pyqtSignal(str, bool)
-    error_signal = pyqtSignal(str)
+    title_loaded = pyqtSignal(str, bool, str, int)
+    error_signal = pyqtSignal(int, str)
 
-    def __init__(self, url, is_audio, parent=None):
+    def __init__(self, url, is_audio, item_id, parent=None):
         super().__init__(parent)
         self.url = url
         self.is_audio = is_audio
+        self.item_id = item_id
 
     def run(self):
         try:
-            command = ["yt-dlp", "--no-warnings", "--playlist-items", "1", "-j", self.url]
-            creation_flags = subprocess.CREATE_NO_WINDOW if is_windows() else 0
-            info_process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, creationflags=creation_flags)
-            info_out, _ = info_process.communicate()
+            info_process = subprocess.Popen(["yt-dlp", "--no-warnings", "--no-playlist", "--playlist-items", "1", "-j", self.url],
+                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+                                            creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0, env=get_subprocess_env())
+            info_out, info_err = info_process.communicate(timeout=20)
 
-            if info_process.returncode != 0:
-                self.error_signal.emit(f"yt-dlp failed with code {info_process.returncode}")
-                return
-
-            info_json = json.loads(info_out)
-            title = info_json.get('title', 'No title found')
-            self.title_loaded.emit(title, self.is_audio)
-            thumbnail_url = info_json.get('thumbnail')
-
-            if not thumbnail_url:
-                self.error_signal.emit("No thumbnail URL found")
-                return
-
-            response = requests.get(thumbnail_url, stream=True)
-            response.raise_for_status()
-            pixmap = QPixmap()
-            pixmap.loadFromData(response.content)
-            if not pixmap.isNull():
-                pixmap = pixmap.scaled(THUMBNAIL_SIZE[0], THUMBNAIL_SIZE[1], Qt.KeepAspectRatio)
-                self.thumbnail_loaded.emit(pixmap)
+            if info_process.returncode == 0:
+                try:
+                    info_json = json.loads(info_out)
+                    title = info_json.get('title', 'No title found')
+                    self.title_loaded.emit(title, self.is_audio, self.url, self.item_id)
+                    thumbnail_url = info_json.get('thumbnail')
+                    if thumbnail_url:
+                        with urllib.request.urlopen(thumbnail_url) as response:
+                            thumbnail_data = response.read()
+                            pixmap = QPixmap()
+                            pixmap.loadFromData(thumbnail_data)
+                            if not pixmap.isNull():
+                                pixmap = pixmap.scaled(320, 180, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                                self.thumbnail_loaded.emit(pixmap)
+                except json.JSONDecodeError:
+                    self.error_signal.emit(self.item_id, "Error: Could not decode JSON")
+                except Exception as e:
+                    self.error_signal.emit(self.item_id, f"Error fetching thumbnail: {e}")
             else:
-                self.error_signal.emit("Failed to load pixmap from downloaded data")
-
-        except json.JSONDecodeError:
-            self.error_signal.emit("Could not decode json from yt-dlp")
-        except requests.RequestException as e:
-            self.error_signal.emit(f"Failed to download thumbnail: {e}")
+                self.error_signal.emit(self.item_id, f"yt-dlp error: {info_err.strip()}")
         except Exception as e:
-            self.error_signal.emit(f"Error loading thumbnail: {e}")
-
-class CustomLabel(QLabel):
-    def set_pixmap(self, pixmap):
-       self.setPixmap(pixmap)
-
-class ModernScrollBar(QScrollBar):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setStyleSheet(STYLE_SHEET["ModernScrollBar"])
+            self.error_signal.emit(self.item_id, f"Error loading thumbnail: {e}")
 
 class DownloadQueue(QObject):
-    def __init__(self, max_concurrent_downloads=MAX_CONCURRENT_DOWNLOADS):
+    def __init__(self, max_concurrent_downloads=3):
         super().__init__()
         self.queue = []
         self.running_downloads = 0
@@ -182,241 +155,468 @@ class DownloadQueue(QObject):
 
     def start_download(self, executor):
         self.mutex.lock()
-        self.queue.append(executor)
-        self.mutex.unlock()
-        self.try_start_next()
-
-    def try_start_next(self):
-        self.mutex.lock()
-        while self.running_downloads < self.max_concurrent_downloads and self.queue:
-            executor = self.queue.pop(0)
+        if self.running_downloads < self.max_concurrent_downloads:
             self.running_downloads += 1
+            self.mutex.unlock()
             executor.finished_signal.connect(self.on_download_finished)
             executor.start()
-        self.mutex.unlock()
+        else:
+            self.queue.append(executor)
+            self.mutex.unlock()
 
-    def on_download_finished(self):
+    def on_download_finished(self, item_id, success):
         self.mutex.lock()
         self.running_downloads -= 1
-        self.mutex.unlock()
-        self.try_start_next()
+        if self.queue:
+            executor = self.queue.pop(0)
+            self.running_downloads += 1
+            self.mutex.unlock()
+            executor.finished_signal.connect(self.on_download_finished)
+            executor.start()
+        else:
+            self.mutex.unlock()
 
-class QueueListWidget(QListWidget):
-    itemDoubleClickedSignal = pyqtSignal(QListWidgetItem)
-
+class ModernScrollBar(QScrollBar):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(STYLE_SHEET["QueueListWidget"])
-        self.itemDoubleClicked.connect(self.itemDoubleClickedSignal.emit)
+        self.setStyleSheet('''
+            QScrollBar:vertical { border: none; background: #28252b; width: 10px; margin: 0; }
+            QScrollBar::handle:vertical { background-color: #3e284f; min-height: 20px; border-radius: 5px; }
+            QScrollBar::handle:vertical:hover { background-color: #4e385f; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { background: none; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+        ''')
 
-    def addItem(self, text):
-        item = QListWidgetItem(text)
-        item.setSizeHint(QSize(200, 50))
-        super().addItem(item)
+class DownloadItemWidget(QWidget):
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(5, 5, 5, 5)
+        self.layout.setSpacing(2)
+
+        self.title_label = QLabel(title)
+        self.title_label.setWordWrap(True)
+        self.layout.addWidget(self.title_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(10)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat('%p%')
+        self.layout.addWidget(self.progress_bar)
+
+        self.status_label = QLabel("Waiting...")
+        self.status_label.setStyleSheet("font-size: 10px; color: #aaa;")
+        self.layout.addWidget(self.status_label)
+
+    def set_title(self, text):
+        self.title_label.setToolTip(text)
+        try:
+            base, ext = os.path.splitext(text)
+            font_metrics = self.title_label.fontMetrics()
+            available_width = 220 - 20 # list width - margins
+            elided_text = font_metrics.elidedText(base, Qt.ElideRight, available_width)
+            if elided_text != base:
+                # It was elided, but elidedText is for one line. Let's just set the text and let word wrap handle it.
+                # The better fix is in the main window updating the size hint.
+                pass
+        except Exception:
+            pass
+        self.title_label.setText(text)
+
+    def set_progress(self, value):
+        self.progress_bar.setValue(value)
+
+    def set_status(self, text, color):
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"font-size: 10px; color: {color};")
+
+class FFmpegCheckThread(QThread):
+    finished = pyqtSignal(bool)
+
+    def run(self):
+        try:
+            subprocess.run(['ffmpeg', '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0)
+            self.finished.emit(True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            self.finished.emit(False)
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(APP_NAME)
-        self.setStyleSheet(STYLE_SHEET["MainWindow"])
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowTitle("iMA Downloader")
+        self.old_pos = self.pos()
+        self.downloaded_files = {}
+        self.download_widgets = {}
+        self.active_threads = []
 
-        main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        self.BG_COLOR = "#28252b"
+        self.TEXT_COLOR = "#bfb8dd"
+        self.ACCENT_COLOR = "#141316"
+        self.VIDEO_COLOR = "#9b59b6" # Brighter Purple
+        self.AUDIO_COLOR = "#3498db" # Brighter Blue
 
-        # Left side (Queue)
-        self.queue_list = QueueListWidget()
-        self.queue_list.setFixedWidth(250)
-        main_layout.addWidget(self.queue_list)
+        self.VIDEO_QUALITY_MAP = {
+            "Highest": "bestvideo+bestaudio/best",
+            "High (1080p)": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+            "Mid (720p)": "bestvideo[height<=720]+bestaudio/best[height<=720]",
+            "Low (480p)": "bestvideo[height<=480]+bestaudio/best[height<=480]",
+            "Very Low (360p)": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+        }
+        self.AUDIO_QUALITY_MAP = {
+            "Highest": "bestaudio/best",
+            "High (~256kbps)": "bestaudio[abr<=256]",
+            "Mid (~192kbps)": "bestaudio[abr<=192]",
+            "Low (~128kbps)": "bestaudio[abr<=128]",
+            "Very Low (~96kbps)": "bestaudio[abr<=96]",
+        }
+        self.video_quality = self.VIDEO_QUALITY_MAP["Highest"]
+        self.audio_quality = self.AUDIO_QUALITY_MAP["Highest"]
 
-        # Right side (Controls)
+        self.check_ffmpeg()
+        self.setup_ui()
+        self.center_window()
+        self.paste_link()
+
+        self.download_queue = DownloadQueue(max_concurrent_downloads=3)
+        self.item_counter = 0
+        self.queue_list.itemDoubleClicked.connect(self.open_downloaded_file)
+
+    def check_ffmpeg(self):
+        self.ffmpeg_checker = FFmpegCheckThread(self)
+        self.ffmpeg_checker.finished.connect(self.on_ffmpeg_check_finished)
+        self.active_threads.append(self.ffmpeg_checker)
+        self.ffmpeg_checker.start()
+
+    def on_ffmpeg_check_finished(self, found):
+        if not found:
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setText("ffmpeg not found.")
+            msg_box.setInformativeText("Please install ffmpeg and ensure it is in your system's PATH.")
+            msg_box.setStandardButtons(QMessageBox.Ok)
+            msg_box.exec_()
+
+    def setup_ui(self):
+        self.background_frame = QFrame(self)
+        self.background_frame.setObjectName("background")
+        self.apply_shadow(self.background_frame, 20, 5)
+
+        main_layout = QVBoxLayout(self.background_frame)
+        main_layout.setContentsMargins(15, 5, 15, 15)
+
+        title_bar_layout = QHBoxLayout()
+        icon_label = QLabel()
+        icon_pixmap = QPixmap('yt.ico').scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        icon_label.setPixmap(icon_pixmap)
+        title_label = QLabel("iMA Downloader")
+        title_label.setStyleSheet("font-weight: bold;")
+
+        settings_button = QPushButton("⚙️")
+        settings_button.setObjectName("settingsBtn")
+        settings_button.setFixedSize(28, 28)
+        self.settings_menu = QMenu(self)
+        settings_button.setMenu(self.settings_menu)
+        self.apply_shadow(settings_button)
+
+        video_quality_group = QActionGroup(self)
+        video_quality_group.setExclusive(True)
+        video_menu = self.settings_menu.addMenu("Video Quality")
+        for quality in self.VIDEO_QUALITY_MAP.keys():
+            action = QAction(quality, self, checkable=True)
+            action.triggered.connect(lambda checked, q=quality: self.set_video_quality(q))
+            if self.video_quality == self.VIDEO_QUALITY_MAP[quality]:
+                action.setChecked(True)
+            video_menu.addAction(action)
+            video_quality_group.addAction(action)
+
+        audio_quality_group = QActionGroup(self)
+        audio_quality_group.setExclusive(True)
+        audio_menu = self.settings_menu.addMenu("Audio Quality")
+        for quality in self.AUDIO_QUALITY_MAP.keys():
+            action = QAction(quality, self, checkable=True)
+            action.triggered.connect(lambda checked, q=quality: self.set_audio_quality(q))
+            if self.audio_quality == self.AUDIO_QUALITY_MAP[quality]:
+                action.setChecked(True)
+            audio_menu.addAction(action)
+            audio_quality_group.addAction(action)
+
+        minimize_button = QPushButton("—")
+        minimize_button.setObjectName("controlBtn")
+        minimize_button.clicked.connect(self.showMinimized)
+        close_button = QPushButton("✕")
+        close_button.setObjectName("controlBtn")
+        close_button.clicked.connect(self.close)
+
+        title_bar_layout.addWidget(icon_label)
+        title_bar_layout.addWidget(title_label)
+        title_bar_layout.addWidget(settings_button)
+        title_bar_layout.addStretch()
+        title_bar_layout.addWidget(minimize_button)
+        title_bar_layout.addWidget(close_button)
+        main_layout.addLayout(title_bar_layout)
+
+        content_layout = QHBoxLayout()
+        main_layout.addLayout(content_layout)
+
+        self.queue_list = QListWidget()
+        self.queue_list.setFixedWidth(220)
+        self.queue_list.setVerticalScrollBar(ModernScrollBar())
+        self.queue_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.apply_shadow(self.queue_list)
+        content_layout.addWidget(self.queue_list)
+
         right_layout = QVBoxLayout()
-        main_layout.addLayout(right_layout)
+        content_layout.addLayout(right_layout)
 
-        self.thumbnail_label = CustomLabel()
-        self.thumbnail_label.setFixedSize(100, 100)
+        self.thumbnail_label = QLabel()
+        self.thumbnail_label.setFixedSize(320, 180)
         self.thumbnail_label.setAlignment(Qt.AlignCenter)
-        self.thumbnail_label.setStyleSheet(STYLE_SHEET["CustomLabel"])
-        thumbnail_layout = QHBoxLayout()
-        thumbnail_layout.setAlignment(Qt.AlignCenter)
-        thumbnail_layout.addWidget(self.thumbnail_label)
-        right_layout.addLayout(thumbnail_layout)
+        self.thumbnail_label.setStyleSheet(f"background-color: {self.ACCENT_COLOR}; border-radius: 10px;")
+        self.apply_shadow(self.thumbnail_label)
+        right_layout.addWidget(self.thumbnail_label)
 
-        self.title_label = QLabel("")
+        self.title_label = QLabel("Enter a URL to begin")
         self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setStyleSheet(STYLE_SHEET["TitleLabel"])
+        self.title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         self.title_label.setWordWrap(True)
         right_layout.addWidget(self.title_label)
 
         url_layout = QHBoxLayout()
-        url_label = QLabel("URL:")
-        url_label.setStyleSheet(STYLE_SHEET["URLLabel"])
-        url_layout.addWidget(url_label)
         self.url_entry = QLineEdit()
-        self.url_entry.setStyleSheet(STYLE_SHEET["QLineEdit"])
-        self.url_entry.mousePressEvent = lambda event: self.url_entry.selectAll()
-        self.url_entry.textChanged.connect(self.fetch_thumbnail)
+        self.url_entry.setPlaceholderText("https://...")
+        self.url_entry.textChanged.connect(self.on_url_changed)
+        self.apply_shadow(self.url_entry)
         url_layout.addWidget(self.url_entry)
+
         self.paste_button = QPushButton("📋")
-        self.paste_button.setStyleSheet(STYLE_SHEET["QPushButton_Paste"])
+        self.paste_button.setObjectName("paste")
+        self.paste_button.setFixedSize(40, 40)
         self.paste_button.clicked.connect(self.paste_link)
+        self.apply_shadow(self.paste_button)
         url_layout.addWidget(self.paste_button)
         right_layout.addLayout(url_layout)
 
         button_layout = QHBoxLayout()
-        button_layout.setAlignment(Qt.AlignCenter)
-        self.download_video_button = QPushButton("🎬 Download Video")
-        self.download_video_button.clicked.connect(self.add_video_to_queue)
-        self.set_button_style(self.download_video_button, VIDEO_BUTTON_COLOR)
+        self.download_video_button = QPushButton("🎬 Video")
+        self.download_video_button.setObjectName("download_video")
+        self.download_video_button.clicked.connect(lambda: self.add_to_queue(is_audio=False))
+        self.apply_shadow(self.download_video_button)
         button_layout.addWidget(self.download_video_button)
-        self.download_audio_button = QPushButton("🎧 Download Audio")
-        self.download_audio_button.clicked.connect(self.add_audio_to_queue)
-        self.set_button_style(self.download_audio_button, AUDIO_BUTTON_COLOR)
+
+        self.download_audio_button = QPushButton("🎧 Audio")
+        self.download_audio_button.setObjectName("download_audio")
+        self.download_audio_button.clicked.connect(lambda: self.add_to_queue(is_audio=True))
+        self.apply_shadow(self.download_audio_button)
         button_layout.addWidget(self.download_audio_button)
         right_layout.addLayout(button_layout)
 
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedHeight(20)
-        self.progress_bar.setStyleSheet(STYLE_SHEET["QProgressBar"].replace("%color%", "transparent"))
-        self.progress_bar.setValue(0)
-        right_layout.addWidget(self.progress_bar)
-
         self.output_text = QTextEdit()
-        self.output_text.setStyleSheet(STYLE_SHEET["QTextEdit"])
         self.output_text.setVerticalScrollBar(ModernScrollBar())
-        self.output_text.setFixedHeight(80)
+        self.output_text.setFixedHeight(120)
+        self.apply_shadow(self.output_text)
         right_layout.addWidget(self.output_text)
 
-        self.status_label = QLabel("")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet(STYLE_SHEET["StatusLabel"])
-        right_layout.addWidget(self.status_label)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.addWidget(self.background_frame)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(outer_layout)
 
         self.output_dir = os.getcwd()
-        self.download_queue = DownloadQueue()
-        self.item_counter = 0
-        self.queue_list.itemDoubleClickedSignal.connect(self.open_downloaded_file)
+        self.set_stylesheet()
 
-        self.center_window()
-        self.paste_link()
+    def set_stylesheet(self):
+        stylesheet = (
+            f"#background {{ background-color: {self.BG_COLOR}; border-radius: 20px; border: 2px solid {self.ACCENT_COLOR}; }}"
+            f"QLabel {{ color: {self.TEXT_COLOR}; background-color: transparent; border: none; }}"
+            f"QLineEdit {{ background-color: {self.ACCENT_COLOR}; color: {self.TEXT_COLOR}; border: 1px solid {self.ACCENT_COLOR}; border-radius: 10px; padding: 8px; font-size: 14px; }}"
+            f"QLineEdit:focus {{ border: 1px solid {self.VIDEO_COLOR}; }}"
+            f"QPushButton#paste {{ background-color: {self.ACCENT_COLOR}; color: {self.TEXT_COLOR}; border: none; border-radius: 10px; font-size: 18px; }}"
+            f"QPushButton#paste:hover {{ background-color: {self.VIDEO_COLOR}; }}"
+            f"QPushButton#download_video, QPushButton#download_audio {{ background-color: {self.ACCENT_COLOR}; color: {self.TEXT_COLOR}; border: none; border-radius: 10px; padding: 10px 20px; font-size: 14px; font-weight: bold; }}"
+            f"QPushButton#download_video:hover {{ background-color: {self.VIDEO_COLOR}; }}"
+            f"QPushButton#download_audio:hover {{ background-color: {self.AUDIO_COLOR}; }}"
+            f"QTextEdit {{ background-color: {self.ACCENT_COLOR}; color: {self.TEXT_COLOR}; border: none; border-radius: 10px; padding: 5px; }}"
+            f"QListWidget {{ background-color: {self.ACCENT_COLOR}; border: none; border-radius: 10px; color: {self.TEXT_COLOR}; padding: 5px; }}"
+            f"QListWidget::item {{ background-color: transparent; border-radius: 8px; padding: 2px; margin: 2px; }}"
+            f"QListWidget::item:hover {{ background-color: {self.BG_COLOR}; }}"
+            f"QListWidget::item:selected {{ background-color: {self.VIDEO_COLOR}; color: white; }}"
+            f"QPushButton#controlBtn {{ background-color: transparent; color: #bfb8dd; border: none; font-size: 14px; font-weight: bold; }}"
+            f"QPushButton#controlBtn:hover {{ color: #ff5555; }}"
+            f"QPushButton#settingsBtn {{ background-color: transparent; color: #bfb8dd; border: none; font-size: 18px; }}"
+            f"QPushButton#settingsBtn::menu-indicator {{ image: none; }}"
+            f"QMenu {{ background-color: {self.BG_COLOR}; color: {self.TEXT_COLOR}; border: 1px solid {self.ACCENT_COLOR}; }}"
+            f"QMenu::item:selected {{ background-color: {self.VIDEO_COLOR}; }}"
+            f"QProgressBar {{ border: none; border-radius: 5px; background-color: #141316; text-align: center; color: white; font-size: 10px; font-weight: bold; }}"
+            f"QProgressBar::chunk:horizontal[value_is_audio=\"false\"] {{ background-color: {self.VIDEO_COLOR}; border-radius: 5px; }}"
+            f"QProgressBar::chunk:horizontal[value_is_audio=\"true\"] {{ background-color: {self.AUDIO_COLOR}; border-radius: 5px; }}"
+        )
+        self.setStyleSheet(stylesheet)
 
-    def set_button_style(self, button, color):
-        button.setStyleSheet(STYLE_SHEET["QPushButton"].replace("%button_color%", color))
+    def set_video_quality(self, quality):
+        self.video_quality = self.VIDEO_QUALITY_MAP[quality]
+
+    def set_audio_quality(self, quality):
+        self.audio_quality = self.AUDIO_QUALITY_MAP[quality]
+
+    def apply_shadow(self, widget, blur=15, y_offset=3):
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(blur)
+        shadow.setColor(QColor(0, 0, 0, 100))
+        shadow.setOffset(0, y_offset)
+        widget.setGraphicsEffect(shadow)
 
     def paste_link(self):
         link = get_clipboard_link()
         if link:
             self.url_entry.setText(link)
+            self.on_url_changed(link)
 
-    def fetch_thumbnail(self, url):
+    def on_url_changed(self, url):
         if url.startswith("http"):
-            self.thumbnail_fetcher = ThumbnailFetcher(url, False, self)
-            self.thumbnail_fetcher.thumbnail_loaded.connect(self.thumbnail_label.set_pixmap)
-            self.thumbnail_fetcher.title_loaded.connect(self.update_title_label)
-            self.thumbnail_fetcher.error_signal.connect(lambda error: logging.warning(f"Thumbnail error: {error}"))
-            self.thumbnail_fetcher.start()
+            self.thumbnail_label.setPixmap(QPixmap())
+            self.title_label.setText("Fetching title...")
+            preview_fetcher = ThumbnailFetcher(url, False, -1, self)
+            preview_fetcher.thumbnail_loaded.connect(self.set_thumbnail)
+            preview_fetcher.title_loaded.connect(lambda title, *args: self.title_label.setText(title))
+            preview_fetcher.error_signal.connect(lambda id, err: self.title_label.setText(err) if id == -1 else None)
+            self.active_threads.append(preview_fetcher)
+            preview_fetcher.start()
 
-    def update_title_label(self, title, is_audio):
-        self.title_label.setText(title)
+    def set_thumbnail(self, pixmap):
+        self.thumbnail_label.setPixmap(pixmap)
 
     def add_to_queue(self, is_audio):
         url = self.url_entry.text()
         if not url:
             return
+
         self.item_counter += 1
         item_id = self.item_counter
-        item_text = f"Audio: {url}" if is_audio else f"Video: {url}"
-        self.queue_list.addItem(item_text)
-        self.fetch_video_title(url, item_id, is_audio)
-        self.start_download(url, item_id, is_audio)
 
-    def add_video_to_queue(self):
-        self.add_to_queue(is_audio=False)
+        prefix = "🎧" if is_audio else "🎬"
+        item = QListWidgetItem(self.queue_list)
+        item.setData(Qt.UserRole, item_id)
 
-    def add_audio_to_queue(self):
-        self.add_to_queue(is_audio=True)
+        widget = DownloadItemWidget(f"{prefix} Fetching title...")
+        widget.progress_bar.setProperty("value_is_audio", is_audio)
+        self.download_widgets[item_id] = widget
 
-    def start_download(self, url, item_id, is_audio):
+        item.setSizeHint(widget.sizeHint())
+        self.queue_list.insertItem(0, item)
+        self.queue_list.setItemWidget(item, widget)
+
+        fetcher = ThumbnailFetcher(url, is_audio, item_id, self)
+        fetcher.title_loaded.connect(self.start_download)
+        fetcher.error_signal.connect(self.on_item_error)
+        self.active_threads.append(fetcher)
+        fetcher.start()
+
+    def start_download(self, title, is_audio, url, item_id):
+        if item_id == -1: return
+
+        sanitized_title = sanitize_filename(title)
+        prefix = "🎧" if is_audio else "🎬"
+        widget = self.download_widgets.get(item_id)
+        if widget:
+            full_title = f"{prefix} {sanitized_title}"
+            widget.set_title(full_title)
+            widget.set_status("Downloading...", self.TEXT_COLOR)
+            for i in range(self.queue_list.count()):
+                item = self.queue_list.item(i)
+                if item and item.data(Qt.UserRole) == item_id:
+                    item.setSizeHint(widget.sizeHint())
+                    break
+
+        output_template = os.path.join(self.output_dir, f"{sanitized_title}.%(ext)s")
+        common_args = ["--no-warnings", "--newline", "--no-playlist"]
+
         if is_audio:
-            command = ["yt-dlp", "--no-warnings", "--no-playlist", "-x", "--audio-format", "mp3", url, "-o", os.path.join(self.output_dir, "%(title)s.%(ext)s")]
-            progress_color = AUDIO_BUTTON_COLOR
-            status_text = "Downloading Audio..."
+            command = ["yt-dlp", *common_args, "-f", self.audio_quality, "-x", "--audio-format", "mp3", "--audio-quality", "0", url, "-o", output_template]
         else:
-            command = ["yt-dlp", "--no-warnings", "--no-playlist", url, "-f", "bv*+ba/b", "--merge-output-format", "mp4", "-o", os.path.join(self.output_dir, "%(title)s.%(ext)s")]
-            progress_color = VIDEO_BUTTON_COLOR
-            status_text = "Downloading Video..."
+            command = ["yt-dlp", *common_args, "-f", self.video_quality, "--merge-output-format", "mp4", url, "-o", output_template]
 
         executor = CommandExecutor(command, item_id, self)
-        executor.output_signal.connect(self.update_output)
-        executor.finished_signal.connect(self.handle_command_completion)
-        executor.progress_signal.connect(self.progress_bar.setValue)
-        executor.item_id_signal.connect(self.on_item_start)
+        executor.output_signal.connect(self.output_text.insertPlainText)
         executor.finished_signal.connect(self.on_item_finished)
-
-        self.status_label.setText(status_text)
-        self.status_label.setStyleSheet(f"color: {STATUS_DOWNLOAD_COLOR};")
-        self.progress_bar.setStyleSheet(STYLE_SHEET["QProgressBar"].replace("%color%", progress_color))
-        self.progress_bar.setValue(0)
+        executor.progress_signal.connect(self.on_item_progress)
+        executor.item_id_signal.connect(self.on_item_start)
+        executor.filepath_signal.connect(self.on_file_path_ready)
+        self.active_threads.append(executor)
         self.download_queue.start_download(executor)
 
-    def update_output(self, line):
-        self.output_text.insertPlainText(line)
-        self.output_text.verticalScrollBar().setValue(self.output_text.verticalScrollBar().maximum())
+    def on_item_error(self, item_id, error_message):
+        if item_id in self.download_widgets:
+            widget = self.download_widgets[item_id]
+            widget.set_status(error_message, "#ff5555")
 
-    def handle_command_completion(self, success):
-        self.status_label.setText("Download Complete!" if success else "Download Failed.")
-        self.status_label.setStyleSheet(f"color: {STATUS_SUCCESS_COLOR if success else STATUS_FAIL_COLOR};")
-        self.progress_bar.setValue(0)
+    def on_item_progress(self, item_id, value):
+        if item_id in self.download_widgets:
+            self.download_widgets[item_id].set_progress(value)
 
     def on_item_start(self, item_id):
-        item = self.queue_list.item(item_id - 1)
-        if item:
-            item.setBackground(QColor(VIDEO_BUTTON_COLOR if "Video" in item.text() else AUDIO_BUTTON_COLOR))
+        if item_id in self.download_widgets:
+            widget = self.download_widgets[item_id]
+            widget.set_status("Downloading...", self.TEXT_COLOR)
 
-    def on_item_finished(self, success):
-        # This needs a way to identify which item finished.
-        # For now, let's assume one at a time for simplicity of this part.
-        pass
+    def on_item_finished(self, item_id, success):
+        if item_id in self.download_widgets:
+            widget = self.download_widgets[item_id]
+            if success:
+                widget.set_status("Download Complete!", "#50fa7b")
+            else:
+                widget.set_status("Download Failed.", "#ff5555")
 
-    def fetch_video_title(self, url, item_id, is_audio):
-        self.thumbnail_fetcher = ThumbnailFetcher(url, is_audio, self)
-        self.thumbnail_fetcher.title_loaded.connect(lambda title, audio: self.update_queue_item(item_id, title, audio))
-        self.thumbnail_fetcher.start()
-
-    def update_queue_item(self, item_id, title, is_audio):
-        item = self.queue_list.item(item_id - 1)
-        if item:
-            item.setText(f"Audio: {title}" if is_audio else f"Video: {title}")
+    def on_file_path_ready(self, item_id, filepath):
+        self.downloaded_files[item_id] = filepath
 
     def center_window(self):
-      qr = self.frameGeometry()
-      cp = QDesktopWidget().availableGeometry().center()
-      qr.moveCenter(cp)
-      self.move(qr.topLeft())
+        qr = self.frameGeometry()
+        cp = QDesktopWidget().availableGeometry().center()
+        qr.moveCenter(cp)
+        self.move(qr.topLeft())
+
+    def mousePressEvent(self, event):
+        self.old_pos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        delta = QPoint(event.globalPos() - self.old_pos)
+        self.move(self.x() + delta.x(), self.y() + delta.y())
+        self.old_pos = event.globalPos()
 
     def open_downloaded_file(self, item):
-         item_text = item.text()
-         title = item_text.split(": ", 1)[1]
-         filepath = None
-         for filename in os.listdir(self.output_dir):
-            if title in filename:
-                 filepath = os.path.join(self.output_dir, filename)
-                 if os.path.isfile(filepath):
-                      break
-         if filepath:
+        item_id = item.data(Qt.UserRole)
+        filepath = self.downloaded_files.get(item_id)
+        if filepath and os.path.isfile(filepath):
             try:
-                 if is_windows():
-                      os.startfile(filepath)
-                 else:
-                      subprocess.Popen(['xdg-open', filepath])
+                if is_windows():
+                    os.startfile(os.path.normpath(filepath))
+                else:
+                    subprocess.Popen(['xdg-open', filepath])
             except Exception as e:
-                 QMessageBox.critical(self, "Error", f"Could not open file:\n{e}")
-         else:
-            QMessageBox.warning(self, "Warning", "File not found in the download directory.")
+                QMessageBox.critical(self, "Error", f"Could not open file:\n{e}")
+        else:
+            QMessageBox.warning(self, "Warning", f"File not found or download not complete. Path: {filepath}")
+
+    def closeEvent(self, event):
+        for thread in self.active_threads:
+            if thread.isRunning():
+                thread.terminate()
+                thread.wait()
+        super().closeEvent(event)
 
 if __name__ == '__main__':
     if is_windows():
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("myappid")
+
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon('yt.ico'))
     window = MainWindow()
+    window.resize(600, 520)
     window.show()
     sys.exit(app.exec_())
