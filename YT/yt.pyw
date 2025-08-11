@@ -548,7 +548,7 @@ class MainWindow(QWidget):
                 'format': self.video_quality,
                 'postprocessors': [{
                     'key': 'FFmpegVideoConvertor',
-                    'preferredformat': 'mp4',
+                    'preferedformat': 'mp4',
                 }],
             })
 
