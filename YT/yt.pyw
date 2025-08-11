@@ -241,12 +241,12 @@ class MainWindow(QWidget):
         self.AUDIO_COLOR = "#3498db" # Brighter Blue
 
         self.VIDEO_QUALITY_MAP = {
-            "Max Quality (4K/8K)": "bestvideo*+bestaudio/best",
-            "Highest (1440p)": "bestvideo[height<=1440]+bestaudio/best[height<=1440]",
-            "High (1080p)": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-            "Mid (720p)": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-            "Low (480p)": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-            "Very Low (360p)": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+            "Highest (mp4)": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "1440p (mp4)": "bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/best[height<=1440][ext=mp4]/best[height<=1440]",
+            "1080p (mp4)": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]",
+            "720p (mp4)": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]",
+            "480p (mp4)": "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]",
+            "360p (mp4)": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=360]",
         }
         self.AUDIO_QUALITY_MAP = {
             "Highest": "bestaudio/best",
@@ -255,7 +255,7 @@ class MainWindow(QWidget):
             "Low (~128kbps)": "bestaudio[abr<=128]",
             "Very Low (~96kbps)": "bestaudio[abr<=96]",
         }
-        self.video_quality = self.VIDEO_QUALITY_MAP["High (1080p)"]
+        self.video_quality = self.VIDEO_QUALITY_MAP["1080p (mp4)"]
         self.audio_quality = self.AUDIO_QUALITY_MAP["Highest"]
 
         self.check_ffmpeg()
