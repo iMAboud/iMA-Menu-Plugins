@@ -174,6 +174,8 @@ class DownloadItemWidget(QWidget):
     def __init__(self, title, item, parent=None):
         super().__init__(parent)
         self.item = item
+        self.is_muxed_download = False
+        self.first_part_finished = False
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(5, 5, 5, 5)
         self.layout.setSpacing(3)
@@ -181,6 +183,7 @@ class DownloadItemWidget(QWidget):
         self.title_label = QLabel(title)
         self.title_label.setWordWrap(True)
         self.title_label.setStyleSheet("font-weight: bold;")
+        self.title_label.setFixedWidth(200)
         self.layout.addWidget(self.title_label)
 
         self.progress_bar = QProgressBar()
@@ -226,6 +229,7 @@ class MainWindow(QWidget):
         self.old_pos = self.pos()
         self.downloaded_files = {}
         self.download_widgets = {}
+        self.video_quality_actions = {}
         self.active_threads = []
         self.current_preview_url = None
         self.current_preview_info = {}
@@ -304,13 +308,14 @@ class MainWindow(QWidget):
         video_quality_group = QActionGroup(self)
         video_quality_group.setExclusive(True)
         video_menu = self.settings_menu.addMenu("Video Quality")
-        for quality in self.VIDEO_QUALITY_MAP.keys():
-            action = QAction(quality, self, checkable=True)
-            action.triggered.connect(lambda checked, q=quality: self.set_video_quality(self.VIDEO_QUALITY_MAP[q]))
-            if self.video_quality == self.VIDEO_QUALITY_MAP[quality]:
+        for quality_text, quality_format in self.VIDEO_QUALITY_MAP.items():
+            action = QAction(quality_text, self, checkable=True)
+            action.triggered.connect(lambda checked, q=quality_format: self.set_video_quality(q))
+            if self.video_quality == quality_format:
                 action.setChecked(True)
             video_menu.addAction(action)
             video_quality_group.addAction(action)
+            self.video_quality_actions[quality_text] = action
 
         audio_quality_group = QActionGroup(self)
         audio_quality_group.setExclusive(True)
@@ -461,6 +466,7 @@ class MainWindow(QWidget):
             self.current_preview_info = {}
             self.thumbnail_label.setPixmap(QPixmap())
             self.title_label.setText("Fetching title...")
+            self.reset_quality_menu_state()
 
             preview_fetcher = ThumbnailFetcher(url, False, -1, self)
             preview_fetcher.thumbnail_loaded.connect(self.set_thumbnail)
@@ -521,6 +527,10 @@ class MainWindow(QWidget):
 
         output_template = os.path.join(self.output_dir, '%(title)s.%(ext)s')
 
+        format_string = self.video_quality if not is_audio else self.audio_quality
+        if '+' in format_string and widget:
+            widget.is_muxed_download = True
+
         ydl_opts = {
             'outtmpl': output_template,
             'noplaylist': True,
@@ -562,24 +572,29 @@ class MainWindow(QWidget):
         widget = self.download_widgets.get(item_id)
         if not widget: return
 
-        if d['status'] == 'downloading':
-            # Determine stage based on codecs to provide better status feedback
-            info = d.get('info_dict', {})
-            vcodec = info.get('vcodec')
-            acodec = info.get('acodec')
+        status = d.get('status')
+        total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+        downloaded_bytes = d.get('downloaded_bytes', 0)
 
-            stage = "Downloading"
-            if vcodec and vcodec != 'none' and acodec and acodec != 'none':
-                stage = "Muxed Stream"
-            elif vcodec and vcodec != 'none':
-                stage = "Video"
-            elif acodec and acodec != 'none':
-                stage = "Audio"
+        if status == 'downloading':
+            stage = "Video" if not widget.first_part_finished and widget.is_muxed_download else "Audio"
+            if not widget.is_muxed_download:
+                stage = "Downloading"
 
-            total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
-            if total_bytes > 0:
-                percent = (d.get('downloaded_bytes', 0) / total_bytes) * 100
-                widget.set_progress(int(percent))
+            raw_percent = (downloaded_bytes / total_bytes) * 100 if total_bytes > 0 else 0
+
+            if widget.is_muxed_download:
+                if widget.first_part_finished:
+                    # Audio part (50% to 100%)
+                    final_percent = 50 + (raw_percent / 2)
+                else:
+                    # Video part (0% to 50%)
+                    final_percent = raw_percent / 2
+            else:
+                # Single stream download
+                final_percent = raw_percent
+
+            widget.set_progress(int(final_percent))
 
             speed = d.get('speed')
             eta = d.get('eta')
@@ -587,11 +602,14 @@ class MainWindow(QWidget):
             eta_str = f"{int(eta)}s" if eta is not None else "..."
             widget.set_status(f"{stage}: {speed_str} | {eta_str}", self.TEXT_COLOR)
 
-        elif d['status'] == 'finished':
-            # This is the end of a single download stage.
-            # The post-processor hook will handle the final "Merging" or "Converting" status.
-            widget.set_status("Download stage complete...", "#aaa")
-            widget.set_progress(100)
+        elif status == 'finished':
+            if widget.is_muxed_download and not widget.first_part_finished:
+                widget.first_part_finished = True
+                widget.set_progress(50)
+                widget.set_status("Video complete, starting audio...", "#aaa")
+            else:
+                # This is the final finish, but we let the postprocessor hook set the final status
+                widget.set_progress(100)
 
     def on_item_start(self, item_id):
         if item_id in self.download_widgets:
@@ -617,11 +635,53 @@ class MainWindow(QWidget):
             self.title_label.setText(info.get('title', 'No title found'))
             self.current_preview_url = url
             self.current_preview_info = info
+            self.update_quality_menu_state(info)
+
+    def update_quality_menu_state(self, info):
+        max_height = 0
+        for f in info.get('formats', []):
+            height = f.get('height')
+            if height and height > max_height:
+                max_height = height
+
+        if "Max Quality (4K/8K)" in self.video_quality_actions:
+            self.video_quality_actions["Max Quality (4K/8K)"].setEnabled(True)
+
+        quality_heights = {
+            "Highest (1440p)": 1440,
+            "High (1080p)": 1080,
+            "Mid (720p)": 720,
+            "Low (480p)": 480,
+            "Very Low (360p)": 360,
+        }
+
+        for quality_text, required_height in quality_heights.items():
+            if quality_text in self.video_quality_actions:
+                action = self.video_quality_actions[quality_text]
+                action.setEnabled(max_height >= required_height)
+
+    def reset_quality_menu_state(self):
+        for action in self.video_quality_actions.values():
+            action.setEnabled(True)
 
     def on_thread_finished(self):
         thread = self.sender()
         if thread and thread in self.active_threads:
             self.active_threads.remove(thread)
+
+    def open_downloaded_file(self, item):
+        item_id = item.data(Qt.UserRole)
+        filepath = self.downloaded_files.get(item_id)
+        if filepath and os.path.isfile(filepath):
+            try:
+                if is_windows():
+                    os.startfile(os.path.normpath(filepath))
+                else:
+                    subprocess.Popen(['xdg-open', filepath])
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Could not open file:\n{e}")
+        else:
+            QMessageBox.warning(self, "Warning", f"File not found or download not complete. Path: {filepath}")
 
     def center_window(self):
         qr = self.frameGeometry()
