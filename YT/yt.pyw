@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QTextEdit, QVBoxLayout, QHBoxLayout,
     QSizePolicy, QProgressBar, QDesktopWidget, QScrollBar,
     QListWidget, QListWidgetItem, QMessageBox, QFrame,
-    QGraphicsDropShadowEffect, QMenu, QAction, QActionGroup)
+    QGraphicsDropShadowEffect, QMenu, QAction, QActionGroup, QFileDialog)
 from PyQt5.QtGui import QIcon, QFont, QPixmap, QClipboard, QColor, QPainter, QBrush, QPen, QFontMetrics
 from PyQt5.QtCore import (
     Qt, QSize, QThread, pyqtSignal, QObject, QMutex, QPoint, QTimer, QRect)
@@ -32,14 +32,11 @@ class DownloadThread(QThread):
     # Signal for the definitive final filepath after all post-processing
     final_filepath_signal = pyqtSignal(int, str)
 
-    def __init__(self, url, ydl_opts, item_id, total_size, parent=None):
+    def __init__(self, url, ydl_opts, item_id, parent=None):
         super().__init__(parent)
         self.url = url
         self.ydl_opts = ydl_opts
         self.item_id = item_id
-        self.total_combined_size = total_size
-        self.downloaded_across_stages = 0
-        self.last_stage_size = 0
 
     def run(self):
         try:
@@ -63,27 +60,8 @@ class DownloadThread(QThread):
             self.error_signal.emit(self.item_id, f"An unexpected error occurred: {e}")
 
     def progress_hook(self, d):
-        d['item_id'] = self.item_id  # Ensure item_id is always present
-
-        if d['status'] == 'downloading':
-            current_stage_bytes = d.get('downloaded_bytes', 0)
-            total_downloaded = self.downloaded_across_stages + current_stage_bytes
-
-            if self.total_combined_size > 0:
-                percent = (total_downloaded / self.total_combined_size) * 100
-                d['total_percent'] = percent
-
-            # Store the total size of the current file for when it finishes
-            if d.get('total_bytes'):
-                self.last_stage_size = d['total_bytes']
-            elif d.get('total_bytes_estimate'):
-                self.last_stage_size = d['total_bytes_estimate']
-
-        elif d['status'] == 'finished':
-            # When a download stage finishes, add its size to the total downloaded
-            self.downloaded_across_stages += self.last_stage_size
-            self.last_stage_size = 0  # Reset for the next stage
-
+        # Add item_id to the dictionary so the receiver knows which download it is
+        d['item_id'] = self.item_id
         self.progress_signal.emit(d)
 
     def postprocessor_hook(self, d):
@@ -168,81 +146,49 @@ class ModernScrollBar(QScrollBar):
         ''')
 
 class DownloadItemWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, item, parent=None):
         super().__init__(parent)
-        self.title = "Starting..."
-        self.status = "Waiting..."
-        self.progress = 0
-        self.status_color = QColor("#aaa")
-        self.is_audio = False
+        self.item = item
 
-        # Define colors directly here for painting
-        self.video_color = QColor("#9b59b6")
-        self.audio_color = QColor("#3498db")
-        self.text_color = QColor("#bfb8dd")
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(5, 5, 5, 5)
+        self.layout.setSpacing(3)
 
-        self.setToolTip(self.title)
-        self.setFixedHeight(60)
+        self.title_label = QLabel("Starting...")
+        self.title_label.setWordWrap(True)
+        self.title_label.setStyleSheet("font-weight: bold;")
+        self.layout.addWidget(self.title_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(12)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat('%p%')
+        self.layout.addWidget(self.progress_bar)
+
+        self.status_label = QLabel("Waiting...")
+        self.status_label.setStyleSheet("font-size: 10px; color: #aaa;")
+        self.layout.addWidget(self.status_label)
 
     def set_title(self, text):
-        self.title = text
-        self.setToolTip(text)
-        self.update()
+        self.title_label.setText(text)
+        self.title_label.setToolTip(text)
+        # Force an update of the item's size hint after text changes
+        self.item.setSizeHint(self.sizeHint())
 
     def set_progress(self, value):
-        self.progress = value
-        self.update()
+        self.progress_bar.setValue(value)
 
     def set_status(self, text, color_hex):
-        self.status = text
-        self.status_color = QColor(color_hex)
-        self.update()
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"font-size: 10px; color: {color_hex};")
 
     def set_type(self, is_audio):
-        self.is_audio = is_audio
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        # Title
-        title_rect = QRect(5, 5, self.width() - 10, 20)
-        painter.setPen(self.text_color)
-        font = painter.font()
-        font.setBold(True)
-        painter.setFont(font)
-        elided_title = painter.fontMetrics().elidedText(self.title, Qt.ElideRight, title_rect.width())
-        painter.drawText(title_rect, Qt.AlignLeft | Qt.AlignVCenter, elided_title)
-
-        # Status
-        status_rect = QRect(5, 45, self.width() - 10, 12)
-        painter.setPen(self.status_color)
-        font.setBold(False)
-        font.setPointSize(8)
-        painter.setFont(font)
-        painter.drawText(status_rect, Qt.AlignLeft | Qt.AlignVCenter, self.status)
-
-        # Progress Bar
-        progress_bar_rect = QRect(5, 28, self.width() - 10, 12)
-        painter.setPen(Qt.NoPen)
-        # Background
-        painter.setBrush(QColor("#141316"))
-        painter.drawRoundedRect(progress_bar_rect, 6, 6)
-
-        # Chunk
-        chunk_width = (self.progress / 100.0) * progress_bar_rect.width()
-        chunk_rect = QRect(progress_bar_rect.x(), progress_bar_rect.y(), int(chunk_width), progress_bar_rect.height())
-        chunk_color = self.audio_color if self.is_audio else self.video_color
-        painter.setBrush(chunk_color)
-        painter.drawRoundedRect(chunk_rect, 6, 6)
-
-        # Text
-        painter.setPen(Qt.white)
-        font.setBold(True)
-        font.setPointSize(7)
-        painter.setFont(font)
-        painter.drawText(progress_bar_rect, Qt.AlignCenter, f"{self.progress}%")
+        # This is used to set the color of the progress bar chunk
+        self.progress_bar.setProperty("is_audio", is_audio)
+        # Re-apply stylesheet to make the property take effect
+        self.progress_bar.style().unpolish(self.progress_bar)
+        self.progress_bar.style().polish(self.progress_bar)
 
 class FFmpegCheckThread(QThread):
     finished = pyqtSignal(bool)
@@ -393,6 +339,7 @@ class MainWindow(QWidget):
         main_layout.addLayout(content_layout)
 
         self.queue_list = QListWidget()
+        self.queue_list.setSpacing(4)
         self.queue_list.setFixedWidth(220)
         self.queue_list.setVerticalScrollBar(ModernScrollBar())
         self.queue_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -488,9 +435,11 @@ class MainWindow(QWidget):
 
     def set_video_quality(self, quality):
         self.video_quality = self.VIDEO_QUALITY_MAP[quality]
+        self.save_config()
 
     def set_audio_quality(self, quality):
         self.audio_quality = self.AUDIO_QUALITY_MAP[quality]
+        self.save_config()
 
     def apply_shadow(self, widget, blur=20, y_offset=5):
         shadow = QGraphicsDropShadowEffect(self)
@@ -596,6 +545,7 @@ class MainWindow(QWidget):
             ydl_opts.update({
                 'format': self.video_quality,
                 'merge_output_format': 'mp4',
+                'postprocessors': [{'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}],
             })
 
         # Pre-flight check to get total size for weighted progress
@@ -724,7 +674,11 @@ class MainWindow(QWidget):
             self.save_config()
 
     def save_config(self):
-        config = {'output_dir': self.output_dir}
+        config = {
+            'output_dir': self.output_dir,
+            'video_quality': self.video_quality,
+            'audio_quality': self.audio_quality
+        }
         with open('config.json', 'w') as f:
             json.dump(config, f, indent=4)
 
@@ -733,8 +687,12 @@ class MainWindow(QWidget):
             with open('config.json', 'r') as f:
                 config = json.load(f)
                 self.output_dir = config.get('output_dir', os.getcwd())
+                self.video_quality = config.get('video_quality', self.VIDEO_QUALITY_MAP["Max Quality (4K/8K)"])
+                self.audio_quality = config.get('audio_quality', self.AUDIO_QUALITY_MAP["Highest"])
         except (FileNotFoundError, json.JSONDecodeError):
             self.output_dir = os.getcwd()
+            self.video_quality = self.VIDEO_QUALITY_MAP["Max Quality (4K/8K)"]
+            self.audio_quality = self.AUDIO_QUALITY_MAP["Highest"]
 
     def center_window(self):
         qr = self.frameGeometry()
