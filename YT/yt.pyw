@@ -18,41 +18,67 @@ from PyQt5.QtCore import (
 import pyperclip
 import yt_dlp
 
-class DownloadThread(QThread):
-    # Signal to emit download progress dictionary
-    progress_signal = pyqtSignal(dict)
-    # Signal to emit the final info dictionary on success
-    finished_signal = pyqtSignal(dict)
-    # Signal to emit on an error, passing item_id and the error message
-    error_signal = pyqtSignal(int, str)
-    # Signal to emit the item_id when the thread starts
-    item_id_signal = pyqtSignal(int)
-    # Signal for post-processing updates
-    postprocessing_signal = pyqtSignal(dict)
-    # Signal for the definitive final filepath after all post-processing
-    final_filepath_signal = pyqtSignal(int, str)
 
-    def __init__(self, url, ydl_opts, item_id, parent=None):
+class PreFlightThread(QThread):
+    finished = pyqtSignal(dict, int, bool, str, int)
+    error = pyqtSignal(int, str)
+
+    def __init__(self, url, ydl_opts, item_id, is_audio, parent=None):
         super().__init__(parent)
         self.url = url
         self.ydl_opts = ydl_opts
         self.item_id = item_id
+        self.is_audio = is_audio
+
+    def run(self):
+        try:
+            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+                info_dict = ydl.extract_info(self.url, download=False)
+
+                total_size = 0
+                formats_to_download = info_dict.get('requested_formats')
+                if formats_to_download:
+                    for f in formats_to_download:
+                        total_size += f.get('filesize') or f.get('filesize_approx', 0)
+                else:
+                    total_size = info_dict.get('filesize') or info_dict.get('filesize_approx', 0)
+
+                self.finished.emit(info_dict, total_size, self.is_audio, self.url, self.item_id)
+
+        except Exception as e:
+            self.error.emit(self.item_id, str(e))
+
+class DownloadThread(QThread):
+    progress_signal = pyqtSignal(dict)
+    finished_signal = pyqtSignal(dict)
+    error_signal = pyqtSignal(int, str)
+    item_id_signal = pyqtSignal(int)
+    postprocessing_signal = pyqtSignal(dict)
+    final_filepath_signal = pyqtSignal(int, str)
+
+    def __init__(self, info_dict, ydl_opts, item_id, total_size, parent=None):
+        super().__init__(parent)
+        self.info_dict = info_dict
+        self.ydl_opts = ydl_opts
+        self.item_id = item_id
+        self.total_combined_size = total_size
+        self.video_bytes = 0
+        self.audio_bytes = 0
 
     def run(self):
         try:
             self.item_id_signal.emit(self.item_id)
-            # Add hooks to the options
             self.ydl_opts['progress_hooks'] = [self.progress_hook]
             self.ydl_opts['postprocessor_hooks'] = [self.postprocessor_hook]
 
             with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
-                info_dict = ydl.extract_info(self.url, download=True)
-                if not info_dict:
+                # Use process_ie_result to avoid re-extracting info
+                final_info = ydl.process_ie_result(self.info_dict, download=True)
+                if not final_info:
                     raise yt_dlp.utils.DownloadError("Download failed, no info dictionary returned.")
 
-            # The 'finished' signal indicates the core download is done, but not necessarily post-processing
-            info_dict['item_id'] = self.item_id
-            self.finished_signal.emit(info_dict)
+            final_info['item_id'] = self.item_id
+            self.finished_signal.emit(final_info)
 
         except yt_dlp.utils.DownloadError as e:
             self.error_signal.emit(self.item_id, str(e))
@@ -60,12 +86,30 @@ class DownloadThread(QThread):
             self.error_signal.emit(self.item_id, f"An unexpected error occurred: {e}")
 
     def progress_hook(self, d):
-        # Add item_id to the dictionary so the receiver knows which download it is
         d['item_id'] = self.item_id
+        if d['status'] == 'downloading':
+            info = d.get('info_dict', {})
+            # Check if this stream has video to distinguish from audio
+            is_video = info.get('vcodec') != 'none' and info.get('acodec') == 'none'
+            is_audio = info.get('acodec') != 'none' and info.get('vcodec') == 'none'
+
+            if is_video:
+                self.video_bytes = d.get('downloaded_bytes', 0)
+            elif is_audio:
+                self.audio_bytes = d.get('downloaded_bytes', 0)
+            else: # Muxed stream (or single file), treat as video for progress
+                self.video_bytes = d.get('downloaded_bytes', 0)
+                self.audio_bytes = 0
+
+            total_downloaded = self.video_bytes + self.audio_bytes
+
+            if self.total_combined_size > 0:
+                percent = (total_downloaded / float(self.total_combined_size)) * 100
+                d['total_percent'] = percent
+
         self.progress_signal.emit(d)
 
     def postprocessor_hook(self, d):
-        # This hook is called after a post-processor has finished
         d['item_id'] = self.item_id
         self.postprocessing_signal.emit(d)
 
@@ -234,8 +278,6 @@ class MainWindow(QWidget):
             "Low (~128kbps)": "bestaudio[abr<=128]",
             "Very Low (~96kbps)": "bestaudio[abr<=96]",
         }
-        self.video_quality = self.VIDEO_QUALITY_MAP["Highest"]
-        self.audio_quality = self.AUDIO_QUALITY_MAP["Highest"]
 
         self.load_config()
         self.check_ffmpeg()
@@ -493,7 +535,7 @@ class MainWindow(QWidget):
         item = QListWidgetItem(self.queue_list)
         item.setData(Qt.UserRole, item_id)
 
-        widget = DownloadItemWidget()
+        widget = DownloadItemWidget(item)
         widget.set_type(is_audio)
         self.download_widgets[item_id] = widget
 
@@ -516,26 +558,71 @@ class MainWindow(QWidget):
             self.active_threads.append(fetcher)
             fetcher.start()
 
-    def start_download(self, title, is_audio, url, item_id):
-        if item_id == -1: return
+    def add_to_queue(self, is_audio):
+        url = self.url_entry.text()
+        if not url:
+            return
 
-        sanitized_title = sanitize_filename(title)
+        self.item_counter += 1
+        item_id = self.item_counter
+
         prefix = "🎧" if is_audio else "🎬"
-        widget = self.download_widgets.get(item_id)
-        if widget:
-            full_title = f"{prefix} {sanitized_title}"
-            widget.set_title(full_title)
-            widget.set_status("Preparing...", self.TEXT_COLOR)
+        item = QListWidgetItem(self.queue_list)
+        item.setData(Qt.UserRole, item_id)
 
+        widget = DownloadItemWidget(item)
+        widget.set_type(is_audio)
+        widget.set_title(f"{prefix} Preparing...")
+        self.download_widgets[item_id] = widget
+
+        item.setSizeHint(widget.sizeHint())
+        self.queue_list.insertItem(0, item)
+        self.queue_list.setItemWidget(item, widget)
+
+        # Prepare ydl_opts for the pre-flight check
         output_template = os.path.join(self.output_dir, '%(title)s.%(ext)s')
-
         ydl_opts = {
             'outtmpl': output_template,
             'noplaylist': True,
             'no_warnings': True,
             'quiet': True,
         }
+        if is_audio:
+            ydl_opts.update({
+                'format': self.audio_quality,
+                'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
+            })
+        else:
+            ydl_opts.update({
+                'format': self.video_quality,
+                'merge_output_format': 'mp4',
+                'postprocessors': [{'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}],
+            })
 
+        # Run pre-flight check in a separate thread to keep UI responsive
+        pre_flight_thread = PreFlightThread(url, ydl_opts, item_id, is_audio, self)
+        pre_flight_thread.finished.connect(self.on_preflight_complete)
+        pre_flight_thread.error.connect(self.on_item_error)
+        pre_flight_thread.finished.connect(self.on_thread_finished) # Also clean up this thread
+        self.active_threads.append(pre_flight_thread)
+        pre_flight_thread.start()
+
+    def on_preflight_complete(self, info_dict, total_size, is_audio, url, item_id):
+        widget = self.download_widgets.get(item_id)
+        if not widget: return
+
+        prefix = "🎧" if is_audio else "🎬"
+        title = info_dict.get('title', 'No Title')
+        sanitized_title = sanitize_filename(title)
+        widget.set_title(f"{prefix} {sanitized_title}")
+
+        output_template = os.path.join(self.output_dir, '%(title)s.%(ext)s')
+        ydl_opts = {
+            'outtmpl': output_template,
+            'noplaylist': True,
+            'no_warnings': True,
+            'quiet': True,
+        }
         if is_audio:
             ydl_opts.update({
                 'format': self.audio_quality,
