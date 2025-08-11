@@ -116,7 +116,14 @@ class ThumbnailFetcher(QThread):
 
     def run(self):
         try:
-            info_process = subprocess.Popen(["yt-dlp", "--no-warnings", "--no-playlist", "--playlist-items", "1", "-j", self.url],
+            command = ["yt-dlp", "--no-warnings", "--no-playlist", "--playlist-items", "1", "-j",
+                       "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
+                       self.url]
+
+            if self.parent() and hasattr(self.parent(), 'cookie_browser') and self.parent().cookie_browser != "None":
+                command.extend(["--cookies-from-browser", self.parent().cookie_browser.lower()])
+
+            info_process = subprocess.Popen(command,
                                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
                                             creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0, env=get_subprocess_env())
             info_out, info_err = info_process.communicate(timeout=20)
@@ -268,6 +275,7 @@ class MainWindow(QWidget):
         }
         self.video_quality = self.VIDEO_QUALITY_MAP["Highest"]
         self.audio_quality = self.AUDIO_QUALITY_MAP["Highest"]
+        self.cookie_browser = "None"
 
         self.check_ffmpeg()
         self.setup_ui()
@@ -336,6 +344,20 @@ class MainWindow(QWidget):
                 action.setChecked(True)
             audio_menu.addAction(action)
             audio_quality_group.addAction(action)
+
+        self.settings_menu.addSeparator()
+        cookie_menu = self.settings_menu.addMenu("Use Cookies From")
+        cookie_group = QActionGroup(self)
+        cookie_group.setExclusive(True)
+
+        browsers = ["None", "Chrome", "Firefox", "Edge", "Brave", "Vivaldi", "Opera"]
+        for browser in browsers:
+            action = QAction(browser, self, checkable=True)
+            action.triggered.connect(lambda checked, b=browser: self.set_cookie_browser(b))
+            if self.cookie_browser == browser:
+                action.setChecked(True)
+            cookie_menu.addAction(action)
+            cookie_group.addAction(action)
 
         minimize_button = QPushButton("—")
         minimize_button.setObjectName("controlBtn")
@@ -455,6 +477,9 @@ class MainWindow(QWidget):
     def set_audio_quality(self, quality):
         self.audio_quality = self.AUDIO_QUALITY_MAP[quality]
 
+    def set_cookie_browser(self, browser):
+        self.cookie_browser = browser
+
     def apply_shadow(self, widget, blur=15, y_offset=3):
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(blur)
@@ -529,13 +554,17 @@ class MainWindow(QWidget):
             "--no-warnings",
             "--no-playlist",
             "--progress-template", "JULES_PROGRESS:%(progress._percent_str)s",
-            "--print", "filename"
+            "--print", "filename",
+            "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
         ]
 
+        if self.cookie_browser and self.cookie_browser != "None":
+            common_args.extend(["--cookies-from-browser", self.cookie_browser.lower()])
+
         if is_audio:
-            command = ["yt-dlp", *common_args, "-f", self.audio_quality, "-x", "--audio-format", "mp3", "--audio-quality", "0", url, "-o", output_template]
+            command = ["yt-dlp", *common_args, "-f", self.audio_quality, "-x", "--audio-format", "mp3", "--audio-quality", "0", "-o", output_template, url]
         else:
-            command = ["yt-dlp", *common_args, "-f", self.video_quality, "--merge-output-format", "mp4", url, "-o", output_template]
+            command = ["yt-dlp", *common_args, "-f", self.video_quality, "--merge-output-format", "mp4", "-o", output_template, url]
 
         executor = CommandExecutor(command, item_id, self)
         executor.output_signal.connect(self.output_text.insertPlainText)
