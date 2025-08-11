@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QGraphicsDropShadowEffect, QMenu, QAction, QActionGroup)
 from PyQt5.QtGui import QIcon, QFont, QPixmap, QClipboard, QColor, QPainter, QBrush, QPen, QFontMetrics
 from PyQt5.QtCore import (
-    Qt, QSize, QThread, pyqtSignal, QObject, QMutex, QPoint)
+    Qt, QSize, QThread, pyqtSignal, QObject, QMutex, QPoint, QTimer, QRect)
 import pyperclip
 import yt_dlp
 
@@ -32,11 +32,14 @@ class DownloadThread(QThread):
     # Signal for the definitive final filepath after all post-processing
     final_filepath_signal = pyqtSignal(int, str)
 
-    def __init__(self, url, ydl_opts, item_id, parent=None):
+    def __init__(self, url, ydl_opts, item_id, total_size, parent=None):
         super().__init__(parent)
         self.url = url
         self.ydl_opts = ydl_opts
         self.item_id = item_id
+        self.total_combined_size = total_size
+        self.downloaded_across_stages = 0
+        self.last_stage_size = 0
 
     def run(self):
         try:
@@ -60,8 +63,27 @@ class DownloadThread(QThread):
             self.error_signal.emit(self.item_id, f"An unexpected error occurred: {e}")
 
     def progress_hook(self, d):
-        # Add item_id to the dictionary so the receiver knows which download it is
-        d['item_id'] = self.item_id
+        d['item_id'] = self.item_id  # Ensure item_id is always present
+
+        if d['status'] == 'downloading':
+            current_stage_bytes = d.get('downloaded_bytes', 0)
+            total_downloaded = self.downloaded_across_stages + current_stage_bytes
+
+            if self.total_combined_size > 0:
+                percent = (total_downloaded / self.total_combined_size) * 100
+                d['total_percent'] = percent
+
+            # Store the total size of the current file for when it finishes
+            if d.get('total_bytes'):
+                self.last_stage_size = d['total_bytes']
+            elif d.get('total_bytes_estimate'):
+                self.last_stage_size = d['total_bytes_estimate']
+
+        elif d['status'] == 'finished':
+            # When a download stage finishes, add its size to the total downloaded
+            self.downloaded_across_stages += self.last_stage_size
+            self.last_stage_size = 0  # Reset for the next stage
+
         self.progress_signal.emit(d)
 
     def postprocessor_hook(self, d):
@@ -252,7 +274,8 @@ class MainWindow(QWidget):
         self.AUDIO_COLOR = "#3498db" # Brighter Blue
 
         self.VIDEO_QUALITY_MAP = {
-            "Highest": "bestvideo+bestaudio/best",
+            "Max Quality (4K/8K)": "bestvideo+bestaudio",
+            "Highest (1080p/1440p)": "bestvideo*[height<=1440]+bestaudio/best[height<=1440]",
             "High (1080p)": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
             "Mid (720p)": "bestvideo[height<=720]+bestaudio/best[height<=720]",
             "Low (480p)": "bestvideo[height<=480]+bestaudio/best[height<=480]",
@@ -270,16 +293,17 @@ class MainWindow(QWidget):
 
         self.load_config()
         self.check_ffmpeg()
+
+        self.url_debounce_timer = QTimer(self)
+        self.url_debounce_timer.setSingleShot(True)
+        self.url_debounce_timer.timeout.connect(self.trigger_thumbnail_fetch)
+
         self.setup_ui()
         self.center_window()
         self.paste_link()
 
         self.item_counter = 0
         self.queue_list.itemDoubleClicked.connect(self.open_downloaded_file)
-
-        self.url_debounce_timer = QTimer(self)
-        self.url_debounce_timer.setSingleShot(True)
-        self.url_debounce_timer.timeout.connect(self.trigger_thumbnail_fetch)
 
     def check_ffmpeg(self):
         self.ffmpeg_checker = FFmpegCheckThread(self)
@@ -560,7 +584,7 @@ class MainWindow(QWidget):
             'outtmpl': output_template,
             'noplaylist': True,
             'no_warnings': True,
-            'quiet': True, # We use our own progress reporting
+            'quiet': True,
         }
 
         if is_audio:
@@ -574,7 +598,27 @@ class MainWindow(QWidget):
                 'merge_output_format': 'mp4',
             })
 
-        downloader = DownloadThread(url, ydl_opts, item_id, self)
+        # Pre-flight check to get total size for weighted progress
+        total_size = 0
+        try:
+            # We must use the same ydl_opts to get the correct info
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(url, download=False)
+                # After processing, info_dict will have a 'requested_formats' key
+                # if multiple formats are to be downloaded.
+                formats_to_download = info_dict.get('requested_formats')
+                if formats_to_download:
+                    for f in formats_to_download:
+                        total_size += f.get('filesize') or f.get('filesize_approx', 0)
+                else:
+                    # Fallback for single-file downloads
+                    total_size = info_dict.get('filesize') or info_dict.get('filesize_approx', 0)
+        except Exception as e:
+            # If we can't get the size, we'll fall back to per-stage progress
+            print(f"Could not get total size: {e}")
+            total_size = 0
+
+        downloader = DownloadThread(url, ydl_opts, item_id, total_size, self)
         downloader.item_id_signal.connect(self.on_item_start)
         downloader.progress_signal.connect(self.on_item_progress_update)
         downloader.finished_signal.connect(self.on_item_finished)
@@ -599,6 +643,16 @@ class MainWindow(QWidget):
         if not widget: return
 
         if d['status'] == 'downloading':
+            # Use the new 'total_percent' if available for smooth progress
+            if 'total_percent' in d:
+                widget.set_progress(int(d['total_percent']))
+            else:
+                # Fallback to per-stage progress if total size wasn't calculated
+                total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                if total_bytes > 0:
+                    percent = (d.get('downloaded_bytes', 0) / total_bytes) * 100
+                    widget.set_progress(int(percent))
+
             # Determine stage based on codecs to provide better status feedback
             info = d.get('info_dict', {})
             vcodec = info.get('vcodec')
@@ -612,11 +666,6 @@ class MainWindow(QWidget):
             elif acodec and acodec != 'none':
                 stage = "Audio"
 
-            total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
-            if total_bytes > 0:
-                percent = (d.get('downloaded_bytes', 0) / total_bytes) * 100
-                widget.set_progress(int(percent))
-
             speed = d.get('speed')
             eta = d.get('eta')
             speed_str = f"{speed / 1024 / 1024:.2f} MiB/s" if speed else "..."
@@ -627,7 +676,7 @@ class MainWindow(QWidget):
             # This is the end of a single download stage.
             # The post-processor hook will handle the final "Merging" or "Converting" status.
             widget.set_status("Download stage complete...", "#aaa")
-            widget.set_progress(100)
+            # Don't set progress to 100 here, wait for the weighted progress to catch up
 
     def on_item_postprocessing(self, d):
         item_id = d.get('item_id')
