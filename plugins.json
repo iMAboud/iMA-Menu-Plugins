@@ -19,7 +19,7 @@
         "name": "YT",
         "description": "Downloads any video as video or audio",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/YT/yt.png",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "install_path": "iMA Menu/plugins/YT",
         "nss_file": "YT.nss",
         "nss_path": "iMA Menu/plugins/YT",
