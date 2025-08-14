@@ -1,0 +1,276 @@
+/* General Styling */
+QWidget#MainWindow {
+    /* The gradient background is handled in code */
+}
+
+/* Common Border and Radius */
+QPushButton#send_file_button,
+QLineEdit#path_entry,
+QPushButton#clear_path_button,
+QTextEdit#output_text,
+SettingsPopup QLineEdit,
+SettingsPopup #set_button {
+    border: 2px solid #7e57c2;
+    border-radius: 10px;
+}
+
+/* Common Background and Text Color */
+QPushButton#send_file_button,
+QLineEdit#path_entry,
+QPushButton#clear_path_button {
+    background-color: #7e57c2;
+    color: white;
+}
+
+/* Title Bar */
+#title_label {
+    color: white;
+    font-size: 12px;
+}
+#settings_button, #minimize_button, #close_button {
+    background-color: transparent;
+    border: none;
+    border-radius: 15px;
+    padding: 0px;
+    font-size: 12px;
+    color: white;
+}
+#settings_button:hover, #minimize_button:hover, #close_button:hover {
+    background-color: rgba(80, 80, 80, 0.5);
+    border: 1px solid #7e57c2;
+}
+#minimize_button {
+    color: #7e57c2;
+}
+#close_button {
+    color: #7e57c2;
+}
+
+/* Send File Button */
+QPushButton#send_file_button {
+    padding: 10px 20px;
+    font-size: 12px;
+    min-width: 150px;
+}
+
+QPushButton#send_file_button:pressed {
+    background-color: #333;
+}
+
+/* Queue List */
+QListWidget#file_queue_list {
+    background-color: rgba(126, 87, 194, 0.3);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 5px;
+    outline: 0;
+}
+
+/* Queue List Item */
+QueueListItem {
+    background-color: #444;
+    border-radius: 10px;
+    border: 2px solid #7e57c2;
+}
+QueueListItem QLabel {
+    color: white;
+    background-color: rgba(80, 80, 80, 0.5);
+    border-radius: 5px;
+    padding: 2px;
+}
+QueueListItem CircularButton {
+    background-color: #333;
+    border-radius: 10px; /* Changed from 8px to 10px */
+    color: white;
+    font-size: 12px;
+    border: 2px solid #7e57c2;
+}
+
+/* File Info Labels */
+QLabel#file_name_label {
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+
+/* Path Entry */
+QLineEdit#path_entry {
+    padding: 5px;
+}
+
+/* Clear Button */
+QPushButton#clear_path_button {
+    padding: 5px;
+}
+
+/* Common Hover States */
+QPushButton#send_file_button:hover,
+QPushButton#clear_path_button:hover {
+    background-color: rgba(126, 87, 194, 0.3);
+}
+
+
+/* Progress Bar */
+QProgressBar#progress_bar {
+    border: 2px solid #7e57c2;
+    border-radius: 5px;
+    background-color: rgba(126, 87, 194, 0.3);
+    text-align: center;
+    color: white;
+    font-size: 14px;
+}
+QProgressBar#progress_bar::chunk {
+    background-color: #7e57c2;
+    border-radius: 10px;
+}
+QProgressBar#progress_bar[is_hashing="true"]::chunk {
+    background-color: #28528d;
+}
+
+
+/* Progress Info Labels */
+QLabel#file_size_label,
+QLabel#time_remaining_label,
+QLabel#speed_label {
+    color: #bbb;
+    font-size: 10px;
+    font-style: italic;
+}
+
+
+/* Status Frame */
+QFrame#status_frame {
+    background-color: rgba(126, 87, 194, 0.1);
+    border-radius: 10px;
+}
+
+/* Status Label */
+QLabel#status_label {
+    color: white;
+    font-size: 14px;
+    background-color: transparent;
+}
+QLabel#status_label[status="success"] {
+    color: green;
+}
+QLabel#status_label[status="error"] {
+    color: red;
+}
+QLabel#status_label[status="cleared"] {
+    color: yellow;
+}
+QLabel#status_label[status="sending"] {
+    color: yellow;
+}
+QLabel#status_label[status="ready"] {
+    color: #0058d3;
+}
+
+
+/* Output Expand Button */
+QPushButton#output_expand_button {
+    background-color: rgba(100, 100, 100, 0.1);
+    color: white;
+    border: 0px solid rgba(50, 50, 50, 0.1);
+    border-radius: 15px;
+}
+QPushButton#output_expand_button:hover {
+    background-color: rgba(100, 100, 100, 0.2);
+}
+
+/* Output Text */
+QTextEdit#output_text {
+    background-color: rgba(126, 87, 194, 0.1);
+    color: lightgray;
+    padding: 5px;
+}
+
+/* ScrollBar */
+QScrollBar:vertical {
+    background-color: transparent;
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background-color: rgba(80, 80, 80, 150);
+    min-height: 20px;
+    border-radius: 5px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    background: none;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+/* Settings Popup */
+SettingsPopup {
+    border: 2px solid #7e57c2;
+    border-radius: 12px;
+}
+SettingsPopup #code_label {
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    background-color: transparent;
+}
+SettingsPopup QLineEdit {
+    background-color: #7e57c2;
+    color: white;
+    padding: 5px;
+    font-size: 14px;
+}
+SettingsPopup #code_description {
+    color: #ddd;
+    font-size: 10px;
+    background-color: transparent;
+}
+SettingsPopup #error_label {
+    color: red;
+    font-size: 12px;
+    background-color: transparent;
+}
+SettingsPopup #set_button {
+    background-color: rgba(126, 87, 194, 0.3);
+    color: white;
+    padding: 10px;
+}
+SettingsPopup #set_button:hover {
+    background-color: #7e57c2;
+}
+SettingsPopup #cancel_button {
+    background-color: #444;
+    color: white;
+    border: 2px solid #555;
+    border-radius: 10px;
+    padding: 10px;
+}
+SettingsPopup #cancel_button:hover {
+    background-color: #555;
+}
+
+/* Context Menu */
+QMenu {
+    background-color: #333;
+    color: white;
+    border: 1px solid #555;
+    border-radius: 10px;
+}
+QMenu::item {
+    background-color: transparent;
+    padding: 5px 10px;
+    margin: 1px 0px;
+    border-radius: 10px;
+    text-align: center;
+}
+QMenu::item:selected {
+    background-color: #555;
+}
+QMenu::item::text {
+    padding-right: 20px;
+}
+QMenu::separator {
+    height: 0px;
+}

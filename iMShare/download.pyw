@@ -7,77 +7,65 @@ import uuid
 import re
 import json
 from queue import Queue
-from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QLineEdit, QPushButton,
-                             QTextEdit, QVBoxLayout, QHBoxLayout, QProgressBar,
-                             QDesktopWidget, QFrame, QListWidget, QListWidgetItem,
-                             QAbstractItemView, QSizePolicy, QSpacerItem, QDialog, QGridLayout,
-                             QFileDialog, QScrollArea, QScrollBar, QGraphicsDropShadowEffect, QMenu,
-                             QToolButton, QColorDialog, QComboBox, QTabWidget)
-from PyQt5.QtGui import QColor, QPainter, QBrush, QLinearGradient, QFont, QPixmap, QIcon, QRegion,QCursor, QPolygon, QPainterPath
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QPoint
-from PyQt5.QtGui import QDesktopServices, QImage
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QLabel, QLineEdit, QPushButton,
+    QTextEdit, QVBoxLayout, QHBoxLayout, QProgressBar,
+    QDesktopWidget, QFrame, QListWidget, QListWidgetItem,
+    QAbstractItemView, QSizePolicy, QDialog, QGridLayout,
+    QScrollArea, QScrollBar, QGraphicsDropShadowEffect, QFileDialog, QMenu)
+from PyQt5.QtGui import (
+    QColor, QPainter, QBrush, QLinearGradient, QFont, QPixmap, QRegion, QPolygon, QPainterPath,
+    QPen, QImage, QDesktopServices, QIcon)
+from PyQt5.QtCore import (
+    Qt, pyqtSignal, QTimer, QPoint, QThreadPool, QRunnable, QObject, QUrl, QThread)
 
-
+# --- INSTANCE HANDLING ---
 def is_windows():
     return platform.system() == "Windows"
 
-def resource_path(relative_path):
-    if getattr(sys, 'frozen', False):
-        if hasattr(sys, '_MEIPASS'):
-            return os.path.join(sys._MEIPASS, relative_path)
+def get_app_data_dir():
+    try:
+        if is_windows():
+            app_data_path = os.path.join(os.environ['LOCALAPPDATA'], 'iMShare')
+        elif platform.system() == "Darwin":
+            app_data_path = os.path.join(os.path.expanduser('~/Library/Application Support'), 'iMShare')
         else:
-             return os.path.join(os.path.dirname(os.path.abspath(__file__)),relative_path)
+            app_data_path = os.path.join(os.path.expanduser('~/.local/share'), 'iMShare')
+        os.makedirs(app_data_path, exist_ok=True)
+        return app_data_path
+    except (OSError, KeyError) as e:
+        print(f"Error: Could not create or access app data directory: {e}")
+        return None
+
+def handle_instance_check():
+    app_data_dir = get_app_data_dir()
+    if not app_data_dir:
+        return
+    lock_file_path = os.path.join(app_data_dir, 'imshare_download.lock')
+    if os.path.exists(lock_file_path):
+        try:
+            with open(lock_file_path, 'r') as f:
+                pid = int(f.read().strip())
+            if is_windows():
+                subprocess.run(['taskkill', '/F', '/PID', str(pid)], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                subprocess.run(['kill', '-9', str(pid)], capture_output=True)
+        except (ValueError, FileNotFoundError, OSError) as e:
+            print(f"Error handling lock file: {e}")
+    try:
+        with open(lock_file_path, 'w') as f:
+            f.write(str(os.getpid()))
+    except OSError as e:
+        print(f"Error writing new lock file: {e}")
+
+# --- END OF INSTANCE HANDLING ---
+
+def resource_path(relative_path):
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
     else:
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
-        
-default_colors = {
-    "background_gradient_start": "#333d3d",
-    "background_gradient_end": "#182e2e",
-    "queue_background": "rgba(0, 102, 102, 0.3)",
-    "queue_text": "white",
-    "queue_border": "none",
-    "path_entry_background": "#008080",
-    "path_entry_text": "white",
-    "path_entry_border": "#008080",
-    "clear_button_background": "#008080",
-    "clear_button_background_hover": "rgba(0, 102, 102, 0.3)",
-    "send_button_color": "#008080",
-    "send_button_border": "#008080",
-    "send_button_background": "rgba(0, 102, 102, 0.3)",
-    "progress_bar_border": "rgba(0, 102, 102, 0.9)",
-    "progress_bar_background": "rgba(0, 102, 102, 0.3)",
-    "progress_bar_text": "white",
-    "progress_bar_chunk": "rgba(0, 102, 102, 0.9)",
-    "time_speed_text": "#bbb",
-    "friends_scroll_background": "rgba(0, 102, 102, 0.05)",
-    "status_frame_background": "rgba(0, 102, 102, 0.3)",
-    "status_text": "white",
-    "status_shadow": "black",
-    "output_expand_background": "rgba(100, 100, 100, 0.1)",
-    "output_expand_hover": "rgba(100, 100, 100, 0.2)",
-    "output_text_background": "rgba(100, 100, 100, 0.2)",
-    "output_text_color": "lightgray",
-    "output_text_border": "#008080",
-    "scroll_bar_handle": "rgba(0, 102, 102, 150)",
-    "add_friend_button": "rgba(0, 102, 102, 0.3)",
-    "add_friend_button_hover": "rgba(10, 66, 66, 0.5)",
-    "friend_image_border": "#008080",
-    "add_friend_popup_background": "#333",
-    "add_friend_popup_text": "white",
-    "app_context_menu_background": "#333",
-    "app_context_menu_text": "white",
-    "app_context_menu_border": "#555",
-    "app_context_menu_selected": "#555",
-    "title_bar_background": "#333",
-    "title_bar_button_hover": "#555",
-    "title_bar_button_text": "white",
-    "title_bar_button_border": "#008080",
-    "minimize_button_color": "#008080",  
-    "close_button_color": "#008080", 
-    "title_bar_button_hover_color": "rgba(80, 80, 80, 0.3)",  
-    "title_bar_button_hover_border_size": 1, 
-    "title_bar_button_font_size": "12px" 
-}
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
 def set_drop_shadow(widget, blur_radius=10, offset_x=4, offset_y=4, opacity=150):
     shadow = QGraphicsDropShadowEffect()
@@ -86,9 +74,35 @@ def set_drop_shadow(widget, blur_radius=10, offset_x=4, offset_y=4, opacity=150)
     shadow.setOffset(offset_x, offset_y)
     widget.setGraphicsEffect(shadow)
 
-class SendFileThread(QThread):
+def create_circular_thumbnail(image_path, size):
+    image = None 
+    try:
+        if image_path and os.path.exists(image_path): 
+            temp_image = QImage(image_path)
+            if not temp_image.isNull(): 
+                image = temp_image
+    except Exception:
+        pass 
+    if image is None: 
+        image = QImage(resource_path("iMShare.png"))
+    scaled_image = image.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+    x = (scaled_image.width() - size) // 2
+    y = (scaled_image.height() - size) // 2
+    cropped_image = scaled_image.copy(x, y, size, size)
+    thumbnail = QPixmap(size, size)
+    thumbnail.fill(Qt.transparent)
+    painter = QPainter(thumbnail)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    path = QPainterPath()
+    path.addEllipse(0, 0, size, size)
+    painter.setClipPath(path)
+    painter.drawPixmap(0, 0, QPixmap.fromImage(cropped_image))
+    painter.end()
+    return thumbnail
+
+class WorkerSignals(QObject):
     output_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal(bool, str)
+    finished_signal = pyqtSignal(bool, str, str)
     progress_signal = pyqtSignal(int)
     speed_signal = pyqtSignal(str)
     hashing_progress_signal = pyqtSignal(int)
@@ -96,341 +110,422 @@ class SendFileThread(QThread):
     status_update_signal = pyqtSignal(str, str)
     time_remaining_signal = pyqtSignal(str)
     current_file_signal = pyqtSignal(str, str)
-    queue_id_signal = pyqtSignal(str)
     file_name_size_signal = pyqtSignal(str,str,str)
 
-    def __init__(self, code_prefix, progress_color, hashing_color, parent=None, queue_id=None):
-        super().__init__(parent)
+class DownloadWorker(QRunnable):
+    def __init__(self, code_prefix, parent=None, queue_id=None):
+        super().__init__()
+        self.signals = WorkerSignals()
         self.code_prefix = code_prefix
-        self.progress_color = progress_color
-        self.hashing_color = hashing_color
         self.process = None
         self.is_hashing = True
         self.hashing_complete = False
-        self.start_time = 0
         self.queue_id = queue_id
         self.filename = "File"
         self.filesize = "N/A"
         self.full_file_path = None
         self.path_exists = False
+        self.total_files = 1
+        self.current_file_index = 0
+        self.download_dir = None
 
     def run(self):
         try:
             command = f'croc --yes {self.code_prefix}'
-            full_command = ["powershell", "-NoExit", "-Command", command] if is_windows() else ["croc", "--yes", self.code_prefix]
-            
+            full_command = ["powershell", "-Command", command] if is_windows() else ["croc", "--yes", self.code_prefix]
             self.process = subprocess.Popen(full_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             universal_newlines=True, creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0)
-
-            self.start_time = time.time()
-            self.current_file_signal.emit(self.filename, self.filesize)
-            self.queue_id_signal.emit(self.queue_id)
-
+            self.signals.current_file_signal.emit(self.filename, self.filesize)
+            output = ""
             while True:
                 line = self.process.stdout.readline()
                 if not line:
                     break
-                self.output_signal.emit(line)
+                output += line
+                self.signals.output_signal.emit(line)
                 self.parse_output_line(line)
             self.process.wait()
-            
             if self.process.returncode != 0:
-                
-                if "not ready" in self.process.stdout.read():  
-                    self.output_signal.emit(f"\nNot Ready\n")
-                    self.finished_signal.emit(False, self.queue_id)
-                else:
-                    self.output_signal.emit(f"\nError: Command exited with code {self.process.returncode}\n")
-                    self.finished_signal.emit(False, self.queue_id)
+                status = "Not Ready" if "not ready" in output else "Failed"
+                self.signals.finished_signal.emit(False, self.queue_id, status)
             else:
-                self.finished_signal.emit(True, self.queue_id)
-                self.status_update_signal.emit("Completed!", "white")
-                self.queue_id_signal.emit(self.queue_id)
+                self.signals.finished_signal.emit(True, self.queue_id, "Complete!")
+        except FileNotFoundError:
+            self.signals.output_signal.emit("\nError: 'croc' or 'powershell' not found. Please ensure they are installed and in the system's PATH.\n")
+            self.signals.finished_signal.emit(False, self.queue_id, "Failed")
         except Exception as e:
-            self.output_signal.emit(f"\nAn error occurred: {e}\n")
-            self.finished_signal.emit(False, self.queue_id)
-    
+            self.signals.output_signal.emit(f"\nAn unexpected error occurred: {e}\n")
+            self.signals.finished_signal.emit(False, self.queue_id, "Failed")
+
     def parse_output_line(self, line):
-        if accept_match := re.search(r"Accept '(.+)' \((.+)\)\?", line):
+        if initial_summary_match := re.match(r'Receiving (\d+) files \((.+)\)', line):
+            self.total_files = int(initial_summary_match.group(1))
+            self.filesize = initial_summary_match.group(2).strip()
+            self.filename = f"Receiving {self.total_files} files"
+            self.signals.file_name_size_signal.emit(self.filename, self.filesize, self.queue_id)
+            self.signals.current_file_signal.emit(self.filename, self.filesize)
+        elif accept_match := re.search(r"Accept '(.+)' \((.+)\)\?", line):
             self.filename = accept_match.group(1).strip()
             self.filesize = accept_match.group(2).strip()
-            self.file_name_size_signal.emit(self.filename, self.filesize, self.queue_id)
-            self.current_file_signal.emit(self.filename, self.filesize)
-
-        if hashing_match := re.match(r'Hashing (.+?)\s+(\d+)%\s+.*?\((.+?)\).*', line):
-            _, progress, speed = hashing_match.groups()
-            self.hashing_progress_signal.emit(int(progress))
-            self.speed_signal.emit(speed.strip())
-            self.is_hashing = True
-            self.status_update_signal.emit("Loading...", "yellow")
-            elapsed = time.time() - self.start_time
-            self.time_remaining_signal.emit(self.format_time(elapsed))
-        elif re.match(r'Sending\s+\d+\s+files.*', line) and not self.hashing_complete:
-            self.hashing_progress_signal.emit(100)
-            self.hashing_complete = True
+            self.signals.file_name_size_signal.emit(self.filename, self.filesize, self.queue_id)
+            self.signals.current_file_signal.emit(self.filename, self.filesize)
+        elif folder_name_match := re.match(r'(.+?)\\', line):
+            self.download_dir = folder_name_match.group(1).strip()
+            self.full_file_path = os.path.join(os.getcwd(), self.download_dir)
+            self.path_exists = os.path.isdir(self.full_file_path)
+            self.filename = self.download_dir
+            self.signals.file_name_size_signal.emit(self.filename, self.filesize, self.queue_id)
+            self.signals.current_file_signal.emit(self.filename, self.filesize)
+        elif uploading_match := re.match(r'(.+?)\s+(\d+)%\s+\|(.+?)\|\s+\((.+?),\s*(.+?)\)\s+(\d+)/(\d+)', line):
+            filename, progress, _, _, speed, current_file_index, total_files = uploading_match.groups()
+            self.filename = filename.strip()
+            self.current_file_index = int(current_file_index)
+            self.total_files = int(total_files)
+            current_file_progress = int(progress)
+            if self.total_files > 1:
+                progress_per_file = 100 / self.total_files
+                completed_files_progress = (self.current_file_index - 1) * progress_per_file
+                current_file_contribution = (current_file_progress / 100) * progress_per_file
+                overall_progress = completed_files_progress + current_file_contribution
+                self.signals.progress_signal.emit(int(overall_progress))
+            else:
+                self.signals.progress_signal.emit(current_file_progress)
+            self.signals.speed_signal.emit(speed.strip())
             self.is_hashing = False
-            self.hashing_finished_signal.emit()
-            self.status_update_signal.emit("Ready to Download", "#0058d3")
-            self.time_remaining_signal.emit("")
-        elif uploading_match := re.match(r'(.+?)\s+(\d+)%\s+.*?\((.+?)\,\s+(.+?)\)\s+\[(.+?)\]', line):
-             _, progress, _, speed, time_remaining = uploading_match.groups()
-             self.progress_signal.emit(int(progress))
-             self.speed_signal.emit(speed.strip())
-             self.is_hashing = False
-             self.status_update_signal.emit("Downloading...", "yellow")
-             self.time_remaining_signal.emit(time_remaining.strip())
-            
-             size_match = re.search(r'\(([\d\.]+ [KMGT]?B)', line)
-             if size_match:
-                self.filesize = size_match.group(1)
-
-        if file_created := re.search(r'file: (.+)', line):
+            self.signals.status_update_signal.emit("Downloading...", "yellow")
+            self.signals.time_remaining_signal.emit("")
+        elif file_created := re.search(r'file: (.+)', line):
             full_file_path = file_created.group(1).strip()
             if os.path.exists(full_file_path):
                 self.full_file_path = full_file_path
                 self.path_exists = True
             else:
-               self.full_file_path = None
-               self.path_exists = False
+                self.full_file_path = None
+                self.path_exists = False
 
-    def format_time(self, seconds):
-        minutes = int(seconds // 60)
-        seconds = int(seconds % 60)
-        return f"{minutes}m{seconds}s"
-    
     def close_process(self):
         if self.process and self.process.poll() is None:
-            kill_command = ['taskkill', '/F', '/T', '/PID', str(self.process.pid)] if is_windows() else ['kill', '-9',
-                                                                                                      str(self.process.pid)]
-            subprocess.Popen(kill_command, creationflags=subprocess.CREATE_NO_WINDOW if is_windows() else 0)
+            if is_windows():
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    kill_command = ['taskkill', '/F', '/T', '/PID', str(self.process.pid)]
+                    subprocess.Popen(kill_command, creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
 
 def update_output(output_widget, line):
     output_widget.insertPlainText(line)
     output_widget.verticalScrollBar().setValue(output_widget.verticalScrollBar().maximum())
 
-def handle_command_completion(success, status_label, progress_bar, window, queue_id):
-    status_label.setText("Complete!" if success else "Not Ready" if "not ready" in window.output_text.toPlainText() else "Failed.")
-    status_label.setStyleSheet(f"color: {'green' if success else 'red'};")
+def handle_command_completion(success, status_label, progress_bar, window, queue_id, status_message):
+    window.dot_animation_timer.stop()
+    status_property = "success" if success else "error"
+    window.show_status_message(status_message, status_property)
     window.speed_label.setText("")
     progress_bar.setValue(0)
     window.is_sending = False
-    if not success:
+    if success:
+        window.update_queue_item_status(queue_id, "Complete!")
+    else:
         window.remove_queue_item(queue_id)
     window.process_pending_queue()
+
+class ClickableImageLabel(QLabel):
+    clicked = pyqtSignal()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.is_hovered = False
+
+    def enterEvent(self, event):
+        self.is_hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.is_hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        color = QColor("white") if self.is_hovered else QColor("#AAAAAA")
+        pen = QPen(color, 2)
+        pen.setStyle(Qt.DotLine)
+        painter.setPen(pen)
+        painter.drawEllipse(self.rect().adjusted(1, 1, -1, -1))
 
 class ModernScrollBar(QScrollBar):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(f"""QScrollBar:vertical {{background-color: transparent;width: 10px;margin: 0px 0px 0px 0px;}}
-            QScrollBar::handle:vertical {{background-color: {default_colors['scroll_bar_handle']};min-height: 20px;border-radius: 5px;}}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{background: none;}}
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical{{background: none;}}""")
 
+class TitleBar(QWidget):
+    def __init__(self, parent_window, parent=None):
+        super().__init__(parent)
+        self.parent_window = parent_window
+        self.start_move_position = None
+        self.window_position = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.start_move_position = event.globalPos()
+            self.window_position = self.parent_window.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and self.start_move_position is not None:
+            delta = event.globalPos() - self.start_move_position
+            self.parent_window.move(self.window_position + delta)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self.start_move_position = None
+        event.accept()
+
+class ThumbnailSignals(QObject):
+    finished = pyqtSignal(QPixmap)
+
+class ThumbnailWorker(QRunnable):
+    def __init__(self, image_path, size):
+        super().__init__()
+        self.image_path = image_path
+        self.size = size
+        self.signals = ThumbnailSignals()
+
+    def run(self):
+        pixmap = create_circular_thumbnail(self.image_path, self.size)
+        self.signals.finished.emit(pixmap)
+
+class FriendWidget(QWidget):
+    def __init__(self, friend_data, parent=None):
+        super().__init__(parent)
+        self.friend_data = friend_data
+        self.main_window = parent
+        self.setFixedSize(75, 100)
+        self.setCursor(Qt.PointingHandCursor)
+        self.pixmap = create_circular_thumbnail(None, 70)
+        self.is_hovered = False
+        image_filename = self.friend_data.get("image")
+        full_image_path = None
+        if image_filename:
+            full_image_path = os.path.join(self.main_window.friend_icons_path, image_filename)
+        if full_image_path:
+            worker = ThumbnailWorker(full_image_path, 70)
+            worker.signals.finished.connect(self.set_pixmap)
+            self.main_window.thread_pool.start(worker)
+
+    def set_pixmap(self, pixmap):
+        self.pixmap = pixmap
+        self.update()
+
+    def enterEvent(self, event):
+        self.is_hovered = True
+        self.update()
+
+    def leaveEvent(self, event):
+        self.is_hovered = False
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        path = QPainterPath()
+        path.addEllipse(2, 2, 70, 70)
+        painter.setClipPath(path)
+        painter.drawPixmap(2, 2, self.pixmap)
+        painter.setClipping(False)
+        pen = QPen(QColor("#00BFFF"), 2) if self.is_hovered else QPen(QColor("#008080"), 1)
+        painter.setPen(pen)
+        painter.drawEllipse(2, 2, 70, 70)
+        font = QFont("Arial", 9)
+        font.setBold(True)
+        painter.setFont(font)
+        friend_name = self.friend_data.get("name", "Name")
+        outline_color = QColor("black")
+        painter.setPen(outline_color)
+        painter.drawText(self.rect().translated(-1, -1), Qt.AlignBottom | Qt.AlignHCenter, friend_name)
+        painter.drawText(self.rect().translated(1, -1), Qt.AlignBottom | Qt.AlignHCenter, friend_name)
+        painter.drawText(self.rect().translated(-1, 1), Qt.AlignBottom | Qt.AlignHCenter, friend_name)
+        painter.drawText(self.rect().translated(1, 1), Qt.AlignBottom | Qt.AlignHCenter, friend_name)
+        painter.setPen(QColor("white"))
+        painter.drawText(self.rect(), Qt.AlignBottom | Qt.AlignHCenter, friend_name)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.main_window.execute_croc_command(self.friend_data.get("download_code", ""))
+        elif event.button() == Qt.RightButton:
+            self.main_window.show_friend_context_menu(self, self.friend_data)
+
+class Ui_MainWindow(object):
+    def setupUi(self, MainWindow):
+        MainWindow.setObjectName("MainWindow")
+        MainWindow.setWindowTitle("iMShare")
+        MainWindow.setMinimumSize(800, 500)
+        MainWindow.title_bar_height = 30
+        MainWindow.setWindowFlag(Qt.FramelessWindowHint)
+        main_layout = QVBoxLayout(MainWindow)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        MainWindow.title_bar = TitleBar(MainWindow, MainWindow)
+        MainWindow.title_bar.setFixedHeight(MainWindow.title_bar_height)
+        MainWindow.title_bar.setAttribute(Qt.WA_StyledBackground, True)
+        MainWindow.title_bar_gradient = QLinearGradient(0, 0, MainWindow.width(), MainWindow.title_bar_height)
+        MainWindow.title_bar_gradient.setColorAt(0, QColor("#141415"))
+        MainWindow.title_bar_gradient.setColorAt(1, QColor("#232324ff"))
+        MainWindow.title_bar_palette = MainWindow.title_bar.palette()
+        MainWindow.title_bar_palette.setBrush(MainWindow.title_bar.backgroundRole(), QBrush(MainWindow.title_bar_gradient))
+        MainWindow.title_bar.setPalette(MainWindow.title_bar_palette)
+        MainWindow.title_bar.setAutoFillBackground(True)
+        title_layout = QHBoxLayout(MainWindow.title_bar)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(0)
+        main_layout.addWidget(MainWindow.title_bar)
+        title_layout.addSpacing(90)
+        MainWindow.title_label = QLabel("iMShare")
+        MainWindow.title_label.setObjectName("title_label")
+        MainWindow.title_label.setAlignment(Qt.AlignCenter)
+        font = QFont()
+        font.setBold(True)
+        MainWindow.title_label.setFont(font)
+        title_layout.addWidget(MainWindow.title_label)
+        MainWindow.title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        MainWindow.minimize_button = QPushButton("▬")
+        MainWindow.minimize_button.setObjectName("minimize_button")
+        MainWindow.minimize_button.setFixedSize(30,30)
+        MainWindow.minimize_button.clicked.connect(MainWindow.showMinimized)
+        title_layout.addWidget(MainWindow.minimize_button)
+        MainWindow.close_button = QPushButton("⬤")
+        MainWindow.close_button.setObjectName("close_button")
+        MainWindow.close_button.setFixedSize(30,30)
+        MainWindow.close_button.clicked.connect(MainWindow.close)
+        title_layout.addWidget(MainWindow.close_button)
+        content_layout = QHBoxLayout()
+        content_layout.setContentsMargins(20, 5, 20, 20)
+        queue_area_layout = QVBoxLayout()
+        MainWindow.queue_layout = QVBoxLayout()
+        MainWindow.queue_layout.setAlignment(Qt.AlignTop)
+        MainWindow.file_queue_list = QListWidget()
+        MainWindow.file_queue_list.setObjectName("file_queue_list")
+        MainWindow.file_queue_list.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        MainWindow.file_queue_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        MainWindow.file_queue_list.setVerticalScrollBar(ModernScrollBar())
+        MainWindow.file_queue_list.setMaximumWidth(200)
+        MainWindow.file_queue_list.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        MainWindow.file_queue_list.itemDoubleClicked.connect(MainWindow.handle_queue_item_click)
+        MainWindow.queue_layout.addWidget(MainWindow.file_queue_list)
+        queue_area_layout.addLayout(MainWindow.queue_layout)
+        content_layout.addLayout(queue_area_layout)
+        main_content_layout = QVBoxLayout()
+        main_content_layout.setAlignment(Qt.AlignTop)
+        MainWindow.file_info_layout = QVBoxLayout()
+        MainWindow.file_name_label = QLabel("")
+        MainWindow.file_name_label.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
+        MainWindow.file_name_label.setAlignment(Qt.AlignLeft)
+        MainWindow.file_info_layout.addWidget(MainWindow.file_name_label)
+        MainWindow.file_size_label = QLabel("")
+        MainWindow.file_size_label.setObjectName("file_size_label")
+        MainWindow.file_size_label.setAlignment(Qt.AlignCenter)
+        MainWindow.file_info_layout.addWidget(MainWindow.file_size_label)
+        file_info_wrapper_layout = QHBoxLayout()
+        file_info_wrapper_layout.addSpacing(130)
+        file_info_wrapper_layout.addLayout(MainWindow.file_info_layout)
+        file_info_wrapper_layout.addStretch(1)
+        main_content_layout.addLayout(file_info_wrapper_layout)
+        input_action_layout = QHBoxLayout()
+        input_action_layout.setAlignment(Qt.AlignLeft)
+        path_label = QLabel("Code:")
+        path_label.setStyleSheet("color: white;")
+        input_action_layout.addWidget(path_label)
+        MainWindow.path_entry = QLineEdit()
+        MainWindow.path_entry.setObjectName("path_entry")
+        MainWindow.path_entry.mousePressEvent = MainWindow.select_all_text
+        input_action_layout.addWidget(MainWindow.path_entry, stretch=1)
+        MainWindow.download_file_button = QPushButton("Download")
+        MainWindow.download_file_button.setObjectName("download_file_button")
+        MainWindow.download_file_button.clicked.connect(MainWindow.start_download)
+        input_action_layout.addWidget(MainWindow.download_file_button)
+        MainWindow.clear_path_button = QPushButton("🗑")
+        MainWindow.clear_path_button.setObjectName("clear_path_button")
+        MainWindow.clear_path_button.clicked.connect(MainWindow.clear_all)
+        MainWindow.clear_path_button.setFixedWidth(30)
+        input_action_layout.addWidget(MainWindow.clear_path_button)
+        main_content_layout.addLayout(input_action_layout)
+        MainWindow.progress_bar = QProgressBar()
+        MainWindow.progress_bar.setObjectName("progress_bar")
+        MainWindow.progress_bar.setFixedHeight(20)
+        MainWindow.progress_bar.setValue(0)
+        main_content_layout.addWidget(MainWindow.progress_bar)
+        MainWindow.progress_info_layout = QHBoxLayout()
+        MainWindow.progress_info_layout.setAlignment(Qt.AlignCenter)
+        MainWindow.time_remaining_label = QLabel("")
+        MainWindow.time_remaining_label.setObjectName("time_remaining_label")
+        MainWindow.time_remaining_label.setAlignment(Qt.AlignCenter)
+        MainWindow.progress_info_layout.addWidget(MainWindow.time_remaining_label)
+        MainWindow.speed_label = QLabel("")
+        MainWindow.speed_label.setObjectName("speed_label")
+        MainWindow.speed_label.setAlignment(Qt.AlignCenter)
+        MainWindow.progress_info_layout.addWidget(MainWindow.speed_label)
+        main_content_layout.addLayout(MainWindow.progress_info_layout)
+        MainWindow.friends_scroll_area = QScrollArea()
+        MainWindow.friends_scroll_area.setObjectName("friends_scroll_area")
+        MainWindow.friends_scroll_area.setWidgetResizable(True)
+        MainWindow.friends_scroll_area.setFrameShape(QFrame.NoFrame)
+        MainWindow.friends_scroll_area.setVerticalScrollBar(ModernScrollBar())
+        MainWindow.friends_container = QWidget()
+        MainWindow.friends_container.setObjectName("friends_container")
+        MainWindow.friends_container_layout = QGridLayout(MainWindow.friends_container)
+        MainWindow.friends_container_layout.setAlignment(Qt.AlignTop)
+        MainWindow.friends_container_layout.setContentsMargins(10, 10, 10, 10)
+        MainWindow.friends_scroll_area.setWidget(MainWindow.friends_container)
+        main_content_layout.addWidget(MainWindow.friends_scroll_area)
+        MainWindow.add_friend_button = MainWindow.create_add_button()
+        MainWindow.add_friend_button.setObjectName("add_friend_button")
+        MainWindow.friends_container_layout.addWidget(MainWindow.add_friend_button, 0, 0)
+        MainWindow.status_frame = QFrame()
+        MainWindow.status_frame.setObjectName("status_frame")
+        MainWindow.status_layout = QHBoxLayout(MainWindow.status_frame)
+        MainWindow.output_expand_button = QPushButton("v")
+        MainWindow.output_expand_button.setObjectName("output_expand_button")
+        MainWindow.output_expand_button.setFixedSize(30, 30)
+        MainWindow.output_expand_button.clicked.connect(MainWindow.toggle_output)
+        MainWindow.status_layout.addWidget(MainWindow.output_expand_button, alignment=Qt.AlignLeft)
+        MainWindow.status_label = QLabel("")
+        MainWindow.status_label.setObjectName("status_label")
+        MainWindow.status_label.setAlignment(Qt.AlignCenter)
+        MainWindow.status_layout.addWidget(MainWindow.status_label, stretch=1)
+        main_content_layout.addWidget(MainWindow.status_frame)
+        MainWindow.output_text = QTextEdit()
+        MainWindow.output_text.setObjectName("output_text")
+        MainWindow.output_text.setVerticalScrollBar(ModernScrollBar())
+        MainWindow.output_text.setHorizontalScrollBar(ModernScrollBar())
+        MainWindow.output_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        MainWindow.output_text.setFixedHeight(80)
+        main_content_layout.addWidget(MainWindow.output_text)
+        content_layout.addLayout(main_content_layout)
+        main_layout.addLayout(content_layout)
+        MainWindow.queue_layout.setStretch(0, 1)
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("iMShare")
-        self.setMinimumSize(800, 500)
-        self.current_colors = default_colors.copy()
-        self.original_default_colors = default_colors.copy()
-
-        self.window_position = None
-        self.start_move_position = None
-        self.title_bar_height = 30
-        self.setWindowFlag(Qt.FramelessWindowHint)
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Custom Title Bar
-        self.title_bar = QWidget(self)
-        self.title_bar.setFixedHeight(self.title_bar_height)
-        self.title_bar.setAttribute(Qt.WA_StyledBackground, True)
-
-        self.title_bar_gradient = QLinearGradient(0, 0, self.width(), self.title_bar_height)
-        self.title_bar_gradient.setColorAt(0, QColor(self.current_colors["background_gradient_start"]))
-        self.title_bar_gradient.setColorAt(1, QColor(self.current_colors["background_gradient_end"]))
-        self.title_bar_palette = self.title_bar.palette()
-        self.title_bar_palette.setBrush(self.title_bar.backgroundRole(), QBrush(self.title_bar_gradient))
-        self.title_bar.setPalette(self.title_bar_palette)
-        self.title_bar.setAutoFillBackground(True)
-
-
-        title_layout = QHBoxLayout(self.title_bar)
-        title_layout.setContentsMargins(0, 0, 0, 0)
-        title_layout.setSpacing(0)
-        main_layout.addWidget(self.title_bar)
-
-
-        self.title_label = QLabel("iMShare")
-        self.title_label.setStyleSheet(f"color: {self.current_colors['title_bar_button_text']}; font-size: 12px;")
-        title_layout.addWidget(self.title_label)
-        self.title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        title_layout.setAlignment(Qt.AlignCenter)
-
-        self.minimize_button = QPushButton("▬")
-        self.minimize_button.setFixedSize(30,30)
-        self.set_title_bar_button_style(self.minimize_button)
-        self.minimize_button.clicked.connect(self.showMinimized)
-        title_layout.addWidget(self.minimize_button)
-
-
-        self.close_button = QPushButton("⬤")
-        self.close_button.setFixedSize(30,30)
-        self.set_title_bar_button_style(self.close_button)
-        self.close_button.clicked.connect(self.close)
-        title_layout.addWidget(self.close_button)
-
-         # Settings Button
-        self.settings_button = QPushButton("⚙")
-        self.settings_button.setFixedSize(30, 30)
-        self.settings_button.setStyleSheet(
-        f"QPushButton {{background-color: transparent; color: {self.current_colors['title_bar_button_text']}; border: none; border-radius: 15px; padding: 0px; font-size: {self.current_colors['title_bar_button_font_size']};}}"
-        f"QPushButton:hover {{background-color: {self.current_colors['title_bar_button_hover_color']}; border: {self.current_colors['title_bar_button_hover_border_size']}px solid {self.current_colors['title_bar_button_border']}; padding: 0px; min-width: 30px; min-height: 30px;}}")
-        self.settings_button.clicked.connect(self.show_settings_popup)
-        
-        settings_button_layout = QHBoxLayout()
-        settings_button_layout.addStretch(1)
-        settings_button_layout.addWidget(self.settings_button, alignment = Qt.AlignRight | Qt.AlignBottom)
-        main_layout.addLayout(settings_button_layout)
-    
-        
-        content_layout = QHBoxLayout()
-        content_layout.setContentsMargins(20, 20, 20, 20)
-
-
-        queue_area_layout = QVBoxLayout()
-        self.queue_layout = QVBoxLayout()
-        self.queue_layout.setAlignment(Qt.AlignTop)
-        self.file_queue_list = QListWidget()
-        self.file_queue_list.setStyleSheet(
-            f"QListWidget {{background-color: {self.current_colors['queue_background']};color: {self.current_colors['queue_text']};border: {self.current_colors['queue_border']};border-radius: 10px;padding: 5px;outline: 0;}}")
-        self.file_queue_list.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.file_queue_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.file_queue_list.setVerticalScrollBar(ModernScrollBar())
-        self.file_queue_list.setMaximumWidth(200)
-        self.file_queue_list.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        self.file_queue_list.itemClicked.connect(self.handle_queue_item_click)
-        self.queue_layout.addWidget(self.file_queue_list)
-        queue_area_layout.addLayout(self.queue_layout)
-        content_layout.addLayout(queue_area_layout)
-
-        main_content_layout = QVBoxLayout()
-        main_content_layout.setAlignment(Qt.AlignTop)
-
-
-        self.file_info_layout = QVBoxLayout()
-        self.file_info_layout.setAlignment(Qt.AlignCenter)
-        self.file_name_label = QLabel("No File Selected")
-        self.file_name_label.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
-        self.file_name_label.setAlignment(Qt.AlignCenter)
-        self.file_info_layout.addWidget(self.file_name_label)
-        self.file_size_label = QLabel("")
-        self.file_size_label.setStyleSheet(f"color: {self.current_colors['time_speed_text']}; font-size: 10px; font-style: italic")
-        self.file_size_label.setAlignment(Qt.AlignCenter)
-        self.file_info_layout.addWidget(self.file_size_label)
-        main_content_layout.addLayout(self.file_info_layout)
-
-        path_layout = QHBoxLayout()
-        path_label = QLabel("Code:")
-        path_label.setStyleSheet("color: white;")
-        path_layout.addWidget(path_label)
-        self.path_entry = QLineEdit()
-        self.path_entry.setStyleSheet(
-            f"QLineEdit {{background-color: {self.current_colors['path_entry_background']};color: {self.current_colors['path_entry_text']};border: 2px solid {self.current_colors['path_entry_border']};border-radius: 10px;padding: 5px;}}"
-        )
-        self.path_entry.mousePressEvent = self.select_all_text
-        path_layout.addWidget(self.path_entry)
-        self.clear_path_button = QPushButton("🗑")
-        self.clear_path_button.clicked.connect(self.clear_all)
-        self.clear_path_button.setFixedWidth(30)
-        self.clear_path_button.setStyleSheet(
-            f"QPushButton {{background-color: {self.current_colors['clear_button_background']};color: white;border: 2px solid {self.current_colors['path_entry_border']};border-radius: 10px;padding: 5px;}}\n            QPushButton:hover {{background-color: {self.current_colors['clear_button_background_hover']};}}")
-        path_layout.addWidget(self.clear_path_button)
-        main_content_layout.addLayout(path_layout)
-        
-        button_layout = QHBoxLayout()
-        button_layout.setAlignment(Qt.AlignCenter)
-        self.send_file_button = QPushButton("Download File")
-        self.send_file_color = self.current_colors["send_button_color"]
-        self.set_button_style(self.send_file_button, self.send_file_color, rounded=True)
-        self.send_file_button.clicked.connect(self.start_command)
-        button_layout.addWidget(self.send_file_button)
-        main_content_layout.addLayout(button_layout)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setFixedHeight(20)
-        self.progress_bar.setStyleSheet(
-            f"QProgressBar {{border: 2px solid {self.current_colors['progress_bar_border']};border-radius: 5px;background-color: {self.current_colors['progress_bar_background']};text-align: center;color: {self.current_colors['progress_bar_text']};font-size: 14px;}} QProgressBar::chunk {{background-color: {self.current_colors['progress_bar_chunk']};border-radius: 10px;}}")
-        self.progress_bar.setValue(0)
-        main_content_layout.addWidget(self.progress_bar)
-
-        self.progress_info_layout = QHBoxLayout()
-        self.progress_info_layout.setAlignment(Qt.AlignCenter)
-        self.time_remaining_label = QLabel("")
-        self.time_remaining_label.setStyleSheet(f"color: {self.current_colors['time_speed_text']}; font-size: 10px; font-style: italic")
-        self.time_remaining_label.setAlignment(Qt.AlignCenter)
-        self.progress_info_layout.addWidget(self.time_remaining_label)
-        self.speed_label = QLabel("")
-        self.speed_label.setStyleSheet(f"color: {self.current_colors['time_speed_text']}; font-size: 10px; font-style: italic")
-        self.speed_label.setAlignment(Qt.AlignCenter)
-        self.progress_info_layout.addWidget(self.speed_label)
-        main_content_layout.addLayout(self.progress_info_layout)
-
-        self.friends_scroll_area = QScrollArea()
-        self.friends_scroll_area.setWidgetResizable(True)
-        self.friends_scroll_area.setFrameShape(QFrame.NoFrame)
-        self.friends_scroll_area.setStyleSheet(f"background-color: {self.current_colors['friends_scroll_background']}; border-radius: 10px;")
-        self.friends_scroll_area.setVerticalScrollBar(ModernScrollBar())
-        self.friends_container = QWidget()
-        self.friends_container_layout = QGridLayout(self.friends_container)
-        self.friends_container_layout.setAlignment(Qt.AlignTop)
-        self.friends_container_layout.setContentsMargins(10, 10, 10, 10)
-        self.friends_scroll_area.setWidget(self.friends_container)
-        main_content_layout.addWidget(self.friends_scroll_area)
-        self.add_friend_button = self.create_add_button()
-        self.friends_container_layout.addWidget(self.add_friend_button, 0, 0)
-
-        self.status_frame = QFrame()
-        self.status_frame.setStyleSheet(f"background-color: {self.current_colors['status_frame_background']}; border-radius: 10px;")
-        self.status_layout = QHBoxLayout(self.status_frame)
-        self.status_layout.setAlignment(Qt.AlignCenter)
-        self.status_label = QLabel("")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet(
-            f"color: {self.current_colors['status_text']}; font-size: 14px;")
-        self.status_layout.addWidget(self.status_label)
-        main_content_layout.addWidget(self.status_frame)
-
-        self.output_expand_button = QPushButton("v")
-        self.output_expand_button.setFixedSize(30, 30)
-        self.output_expand_button.setStyleSheet(
-            f"QPushButton {{background-color: {self.current_colors['output_expand_background']};color: white;border: 0px solid rgba(50, 50, 50, 0.1);border-radius: 15px;}}\n            QPushButton:hover {{background-color: {self.current_colors['output_expand_hover']};}}")
-        self.output_expand_button.clicked.connect(self.toggle_output)
-        output_layout = QHBoxLayout()
-        output_layout.addWidget(self.output_expand_button, alignment=Qt.AlignLeft)
-        main_content_layout.addLayout(output_layout)
-
-        self.output_text = QTextEdit()
-        self.output_text.setStyleSheet(
-            f"QTextEdit {{background-color: {self.current_colors['output_text_background']};color: {self.current_colors['output_text_color']};border: 2px solid {self.current_colors['output_text_border']};border-radius: 10px;padding: 1px;}}"
-        )
-        self.output_text.setVerticalScrollBar(ModernScrollBar())
-        self.output_text.setHorizontalScrollBar(ModernScrollBar())
-        self.output_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.output_text.setFixedHeight(80)
-        main_content_layout.addWidget(self.output_text)
-        
-        content_layout.addLayout(main_content_layout)
-
-        main_layout.addLayout(content_layout)
-
-        self.queue_layout.setStretch(0, 1)
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
         self.center_window()
         self.set_rounded_window()
         self.set_gradient_background()
-
+        self.launch_path = os.getcwd()
         self.active_threads = []
         self.dot_animation_timer = QTimer(self)
         self.dot_animation_timer.timeout.connect(self.update_dots)
@@ -438,75 +533,49 @@ class MainWindow(QWidget):
         self.current_status_message = ""
         self.is_sending = False
         self.file_queue = Queue()
+        self.queue_item_widgets = {}
         self.clear_message_timer = QTimer(self)
-        self.clear_message_timer.timeout.connect(self.clear_message_timeout)
+        self.clear_message_timer.setSingleShot(True)
+        self.clear_message_timer.timeout.connect(self.clear_status_message)
         self.current_file = None
         self.output_visible = False
         self.output_text.setVisible(self.output_visible)
         self.output_expand_button.setText("^")
-        
-        if getattr(sys, 'frozen', False):
-            application_path = os.path.dirname(sys.executable)
+        self.old_pos = None
+        QTimer.singleShot(0, self._deferred_init_data)
+
+    def _deferred_init_data(self):
+        app_data_dir = get_app_data_dir()
+        if app_data_dir:
+            self.config_file = os.path.join(app_data_dir, "iMShare.json")
+            self.friend_icons_path = os.path.join(app_data_dir, "friend_icons")
+            try:
+                if not os.path.exists(self.friend_icons_path):
+                    os.makedirs(self.friend_icons_path)
+            except OSError as e:
+                print(f"Error creating friend_icons directory: {e}")
+                self.friend_icons_path = None
         else:
-            application_path = os.path.dirname(os.path.abspath(__file__))
-        self.config_file = os.path.join(application_path, "iMShare.json")
+            self.config_file = None
+            self.friend_icons_path = None
         self.settings = self.load_settings()
         self.download_code = self.settings.get("download_code", None)
         self.path_entry.setText(self.download_code or "")
-        
-        # Load theme if available
-        loaded_theme = self.settings.get("theme_colors", None)
-        if loaded_theme:
-           self.current_colors = loaded_theme
-           self.update_theme(self.current_colors)
-        
-
         self.friends = self.settings.get("friends", [])
-        self.load_friends()
+        self.thread_pool = QThreadPool()
+        QTimer.singleShot(100, self.load_friends)
+        QTimer.singleShot(200, self.apply_effects) # Defer effects
 
-        set_drop_shadow(self.send_file_button)
+    def apply_effects(self):
+        set_drop_shadow(self.download_file_button)
         set_drop_shadow(self.file_queue_list)
         set_drop_shadow(self.friends_scroll_area)
         set_drop_shadow(self.status_frame)
+        set_drop_shadow(self.status_label)
         set_drop_shadow(self.path_entry)
         set_drop_shadow(self.clear_path_button)
         set_drop_shadow(self.progress_bar)
-        
 
-    def set_title_bar_button_style(self, button):
-        if button == self.minimize_button:
-           button_color = self.current_colors["minimize_button_color"]
-        else:
-           button_color = self.current_colors["close_button_color"]
-
-        button.setStyleSheet(
-            f"QPushButton {{background-color: transparent; color: {button_color}; border: none; border-radius: 15px;padding: 0px; font-size: {self.current_colors['title_bar_button_font_size']};}}"
-            f"QPushButton:hover {{background-color: {self.current_colors['title_bar_button_hover_color']}; border: {self.current_colors['title_bar_button_hover_border_size']}px solid {self.current_colors['title_bar_button_border']}; padding: 0px; min-width: 30px; min-height: 30px;}}")
-        
-    def save_theme_to_json(self, colors):
-        self.settings["theme_colors"] = colors
-        try:
-            with open(self.config_file, 'w') as file:
-                json.dump(self.settings, file, indent=4)
-        except Exception as e:
-            print(f"Failed to save theme settings: {e}")
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton and event.y() < self.title_bar_height:
-            self.start_move_position = event.globalPos()
-            self.window_position = self.pos()
-            event.accept()
-
-    def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.LeftButton and self.start_move_position is not None and event.y() < self.title_bar_height:
-            delta = event.globalPos() - self.start_move_position
-            self.move(self.window_position + delta)
-            event.accept()
-
-    def mouseReleaseEvent(self, event):
-        self.start_move_position = None
-        event.accept()
-        
     def set_rounded_window(self):
         path = QPainterPath()
         rect = self.rect()
@@ -519,83 +588,91 @@ class MainWindow(QWidget):
             region = QRegion(qpolygon)
             self.setMask(region)
 
-    
     def closeEvent(self, event):
-        for thread in self.active_threads:
-            if hasattr(thread, 'close_process'):
-                thread.close_process()
+        self.thread_pool.waitForDone()
         event.accept()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            widget_at_pos = self.childAt(event.pos())
+            interactive_widgets = (QPushButton, QLineEdit, QListWidget, QScrollArea, QTextEdit, TitleBar)
+            if isinstance(widget_at_pos, interactive_widgets):
+                event.ignore()
+            else:
+                self.old_pos = event.globalPos()
+                event.accept()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and self.old_pos is not None:
+            delta = event.globalPos() - self.old_pos
+            self.move(self.pos() + delta)
+            self.old_pos = event.globalPos()
+            event.accept()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.old_pos = None
+        event.accept()
+        super().mouseReleaseEvent(event)
 
     def set_gradient_background(self):
         gradient = QLinearGradient(0, 0, self.width(), self.height())
-        gradient.setColorAt(0, QColor(self.current_colors["background_gradient_start"]))
-        gradient.setColorAt(1, QColor(self.current_colors["background_gradient_end"]))
-
+        gradient.setColorAt(0, QColor("#141415"))
+        gradient.setColorAt(1, QColor("#141415"))
         palette = self.palette()
         palette.setBrush(self.backgroundRole(), QBrush(gradient))
         self.setPalette(palette)
     
     def resizeEvent(self, event):
         self.title_bar_gradient = QLinearGradient(0, 0, self.width(), self.title_bar_height)
-        self.title_bar_gradient.setColorAt(0, QColor(self.current_colors["background_gradient_start"]))
-        self.title_bar_gradient.setColorAt(1, QColor(self.current_colors["background_gradient_end"]))
+        self.title_bar_gradient.setColorAt(0, QColor("#141415"))
+        self.title_bar_gradient.setColorAt(1, QColor("#141415"))
         self.title_bar_palette.setBrush(self.title_bar.backgroundRole(), QBrush(self.title_bar_gradient))
         self.title_bar.setPalette(self.title_bar_palette)
-
-
         self.set_gradient_background()
         super().resizeEvent(event)
 
     def update_progress_bar(self, progress, color, is_hashing):
-         self.progress_bar.setStyleSheet(
-            f"""QProgressBar {{border: 2px solid {self.current_colors['progress_bar_border']};border-radius: 5px;background-color: {self.current_colors['progress_bar_background']};text-align: center;color: {self.current_colors['progress_bar_text']};font-size: 14px;}}
-             QProgressBar::chunk {{background-color: {color};border-radius: 10px;}}""")
-         self.progress_bar.setValue(progress)
+        self.progress_bar.setValue(progress)
 
     def update_speed(self, speed):
-        self.speed_label.setText(f"{speed}")
+        self.speed_label.setText(speed)
 
     def update_time_remaining(self, time_remaining):
-        self.time_remaining_label.setText(f"{time_remaining}")
+        self.time_remaining_label.setText(time_remaining)
 
     def clear_path(self):
         self.path_entry.clear()
-        self.file_name_label.setText("No File Selected")
+        self.file_name_label.setText("")
         self.file_size_label.setText("")
 
     def clear_all(self):
-        for thread in self.active_threads:
-            if hasattr(thread, 'close_process'):
-                thread.close_process()
-        for thread in self.active_threads:
-            thread.wait()
-        self.active_threads = []
         self.output_text.clear()
         self.clear_path()
-        self.status_label.setText("Cleared!")
-        self.status_label.setStyleSheet(
-            "color: yellow; text-shadow: -1px -1px 0 black, 1px -1px 0 black, -1px 1px 0 black, 1px 1px 0 black;")
+        self.show_status_message("Cleared!", "cleared", 3000)
         self.progress_bar.setValue(0)
         self.speed_label.setText("")
         self.time_remaining_label.setText("")
         self.dot_animation_timer.stop()
-        self.clear_message_timer.start(3000)
         self.is_sending = False
         self.current_file = None
 
-    def clear_message_timeout(self):
-        self.status_label.setText("")
-        self.status_label.setStyleSheet(
-            "color: white; text-shadow: -1px -1px 0 black, 1px -1px 0 black, -1px 1px 0 black, 1px 1px 0 black;")
-        self.clear_message_timer.stop()
+    def show_status_message(self, text, status_property, timeout_ms=0):
+        self.status_label.setText(text)
+        self.status_label.setProperty("status", status_property)
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
+        if timeout_ms > 0:
+            self.clear_message_timer.start(timeout_ms)
+
+    def clear_status_message(self):
+        self.show_status_message("", "")
 
     def update_animated_status(self, message, color):
         self.current_status_message = message
-        shadow_color = self.current_colors["status_shadow"]
-        shadow_style = f"text-shadow: -1px -1px 0 {shadow_color}, 1px -1px 0 {shadow_color}, -1px 1px 0 {shadow_color}, 1px 1px 0 {shadow_color};"
+        self.show_status_message(message, "sending")
         self.status_label.setFont(QFont("Arial", 12, QFont.Normal))
-
-
         self.dot_count = 0
         self.update_dots()
         if "Loading..." in message or "Downloading..." in message:
@@ -611,12 +688,6 @@ class MainWindow(QWidget):
         else:
             self.status_label.setText(self.current_status_message)
 
-    def set_button_style(self, button, color, rounded=False):
-        border_radius = "10px" if rounded else "0px"
-        button.setStyleSheet(f"""QPushButton {{background-color: {self.current_colors["send_button_background"]}; color: white; border: 2px solid {self.current_colors["send_button_border"]}; border-radius: {border_radius}; padding: 10px 20px; font-size: 12px; min-width: 150px;}}
-                                QPushButton:hover {{background-color: {color};}}
-                                QPushButton:pressed {{background-color: #333;}}""")
-
     def center_window(self):
         qr = self.frameGeometry()
         cp = QDesktopWidget().availableGeometry().center()
@@ -628,15 +699,18 @@ class MainWindow(QWidget):
         QLineEdit.mousePressEvent(self.path_entry, event)
     
     def load_settings(self):
+        if not self.config_file or not os.path.exists(self.config_file):
+            return {}
         try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as file:
-                    return json.load(file)
-        except (FileNotFoundError, json.JSONDecodeError):
+            with open(self.config_file, 'r') as file:
+                return json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError, TypeError):
             pass
         return {}
 
     def save_code_to_json(self, code):
+        if not self.config_file:
+            return
         self.download_code = code
         self.settings["download_code"] = code
         try:
@@ -644,179 +718,167 @@ class MainWindow(QWidget):
                 json.dump(self.settings, file, indent=4)
         except Exception as e:
             print(f"Failed to save settings: {e}")
-        self.process_pending_queue()
     
     def toggle_output(self):
         self.output_visible = not self.output_visible
         self.output_text.setVisible(self.output_visible)
         self.output_expand_button.setText("v" if self.output_visible else "^")
         
-    
-    def start_command(self):
+    def start_download(self):
         code_prefix = self.path_entry.text().strip()
         if not code_prefix:
-            self.status_label.setText("Please enter a code.")
-            self.status_label.setStyleSheet(
-                "color: red; text-shadow: -1px -1px 0 black, 1px -1px 0 black, -1px 1px 0 black, 1px 1px 0 black;")
-            self.clear_message_timer.start(3000)
+            self.show_status_message("Please enter a code.", "error", 3000)
             return
-        
         if self.is_sending:
-            self.status_label.setText("Already sending.")
-            self.status_label.setStyleSheet(
-                "color: red; text-shadow: -1px -1px 0 black, 1px -1px 0 black, -1px 1px 0 black, 1px 1px 0 black;")
-            self.clear_message_timer.start(3000)
+            self.show_status_message("Already sending.", "error", 3000)
             return
-        
         self.download_code = code_prefix
         self.save_code_to_json(code_prefix)
-            
         queue_id = str(uuid.uuid4())
-        
         self.file_queue.put((code_prefix, queue_id))
         self.process_pending_queue()
 
     def process_pending_queue(self):
-        if self.is_sending:
+        if self.is_sending or self.file_queue.empty():
             return
-        if not self.file_queue.empty():
-            code_prefix, queue_id = self.file_queue.get()
-            self.is_sending = True
-            
-            self.current_file = ("File", "N/A")
-            self.file_name_label.setText(f"File: File")
-            self.file_size_label.setText(f"Size: N/A")
-            
-            list_item = QListWidgetItem("File", self.file_queue_list)
-            list_item.queue_id = queue_id
-            self.file_queue_list.addItem(list_item)
-            
-            self.start_send_thread(code_prefix, queue_id)
+        code_prefix, queue_id = self.file_queue.get()
+        self.is_sending = True
+        self.current_file = ("Preparing...", "")
+        self.file_name_label.setText("Preparing...")
+        self.file_size_label.setText("")
+        list_item = QListWidgetItem("Preparing...", self.file_queue_list)
+        list_item.queue_id = queue_id
+        self.queue_item_widgets[queue_id] = list_item
+        self.file_queue_list.addItem(list_item)
+        self.start_send_thread(code_prefix, queue_id)
 
     def start_send_thread(self, code_prefix, queue_id):
-        send_thread = SendFileThread(code_prefix, self.send_file_color, self.send_file_color, self, queue_id=queue_id)
-        send_thread.output_signal.connect(lambda line: update_output(self.output_text, line))
-        send_thread.finished_signal.connect(
-            lambda success, queue_id: handle_command_completion(success, self.status_label, self.progress_bar, self, queue_id))
-        send_thread.progress_signal.connect(lambda progress: self.update_progress_bar(progress, self.send_file_color, False))
-        send_thread.hashing_progress_signal.connect(lambda progress: self.update_progress_bar(progress, self.send_file_color, True))
-        send_thread.speed_signal.connect(self.update_speed)
-        send_thread.status_update_signal.connect(self.update_animated_status)
-        send_thread.time_remaining_signal.connect(self.update_time_remaining)
-        send_thread.current_file_signal.connect(self.update_current_file_info)
-        send_thread.queue_id_signal.connect(self.update_queue_item_status)
-        send_thread.file_name_size_signal.connect(self.update_queue_item_name_size)
-        send_thread.start()
-        self.active_threads.append(send_thread)
+        worker = DownloadWorker(code_prefix, self, queue_id=queue_id)
+        worker.signals.output_signal.connect(lambda line: update_output(self.output_text, line))
+        worker.signals.finished_signal.connect(
+            lambda success, q_id, msg: handle_command_completion(success, self.status_label, self.progress_bar, self, q_id, msg))
+        worker.signals.progress_signal.connect(lambda progress: self.update_progress_bar(progress, "#008080", False))
+        worker.signals.hashing_progress_signal.connect(lambda progress: self.update_progress_bar(progress, "#008080", True))
+        worker.signals.speed_signal.connect(self.update_speed)
+        worker.signals.status_update_signal.connect(self.update_animated_status)
+        worker.signals.time_remaining_signal.connect(self.update_time_remaining)
+        worker.signals.current_file_signal.connect(self.update_current_file_info)
+        worker.signals.file_name_size_signal.connect(self.update_queue_item_name_size)
+        self.active_threads.append(worker)
+        self.thread_pool.start(worker)
 
-    def update_queue_item_status(self, queue_id):
-        for i in range(self.file_queue_list.count()):
-            item = self.file_queue_list.item(i)
-            if hasattr(item, 'queue_id') and item.queue_id == queue_id:
-                if self.status_label.text() == "Completed!":
-                    item.setText(f"📁  {item.text()}")
-                    item.is_complete = True
-                if self.status_label.text() == "Downloading...":
-                    item.setText(f"⏳ {item.text().replace('📁 ', '')}")
-                    item.is_complete = False
-                if self.status_label.text() == "Ready to Download":
-                    item.setText(f"{item.text().replace('⏳ ', '')}")
-                item.is_complete = False
+    def update_queue_item_status(self, queue_id, status=None):
+        item = self.queue_item_widgets.get(queue_id)
+        if not item:
+            return
+        base_text = item.text().replace('📁 ', '').replace('⏳ ', '')
+        if status == "Complete!":
+            item.setText(f"📁  {base_text}")
+            item.is_complete = True
+        elif status == "Downloading...":
+            item.setText(f"⏳ {base_text}")
+            item.is_complete = False
+        else:
+            item.setText(base_text)
+            item.is_complete = False
                     
     def update_queue_item_name_size(self, filename, filesize, queue_id):
-       for i in range(self.file_queue_list.count()):
-          item = self.file_queue_list.item(i)
-          if hasattr(item, 'queue_id') and item.queue_id == queue_id:
+        item = self.queue_item_widgets.get(queue_id)
+        if item:
             item.setText(f"{filename} ({filesize})")
-            break
            
     def remove_queue_item(self, queue_id):
-        for i in range(self.file_queue_list.count()):
-            item = self.file_queue_list.item(i)
-            if hasattr(item, 'queue_id') and item.queue_id == queue_id:
-                self.file_queue_list.takeItem(i)
-                break
+        item = self.queue_item_widgets.pop(queue_id, None)
+        if item:
+            row = self.file_queue_list.row(item)
+            if row != -1:
+                self.file_queue_list.takeItem(row)
 
     def update_current_file_info(self, filename, filesize):
         self.current_file = (filename, filesize)
-        self.file_name_label.setText(f"File: {filename}")
+        self.file_name_label.setText(filename)
         self.file_size_label.setText(f"Size: {filesize}")
     
     def handle_queue_item_click(self, item):
-        if hasattr(item, 'queue_id') and hasattr(item, 'is_complete') and item.is_complete:
-          for thread in self.active_threads:
-                if hasattr(thread, "queue_id") and thread.queue_id == item.queue_id:
-                    if not thread.path_exists:
-                      print("Error: path not found")
-                      break
+        if not (hasattr(item, 'queue_id') and hasattr(item, 'is_complete') and item.is_complete):
+            return
 
-                    if item.text().startsWith("📁 "):
-                        if thread.full_file_path:
-                            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(thread.full_file_path)))
+        for thread in self.active_threads:
+            if hasattr(thread, "queue_id") and thread.queue_id == item.queue_id:
+                if thread.path_exists and thread.full_file_path:
+                    try:
+                        if os.path.isfile(thread.full_file_path):
+                            QDesktopServices.openUrl(QUrl.fromLocalFile(thread.full_file_path))
                         else:
-                           print("Error: full_file_path not found for the folder")
-                    elif thread.full_file_path:
-                        QDesktopServices.openUrl(QUrl.fromLocalFile(thread.full_file_path))
-                    else:
-                        print("Error: full_file_path not found")
-                    break
+                            files = os.listdir(thread.full_file_path)
+                            if len(files) == 1:
+                                QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.join(thread.full_file_path, files[0])))
+                            else:
+                                QDesktopServices.openUrl(QUrl.fromLocalFile(thread.full_file_path))
+                    except Exception as e:
+                        print(f"Error opening path: {e}")
+                        if thread.full_file_path:
+                            QDesktopServices.openUrl(QUrl.fromLocalFile(thread.full_file_path))
+                else:
+                    print("Error: path not found")
+                break
         self.file_queue_list.clearSelection()
     
     def create_add_button(self):
-       button = QPushButton()
+       button = QPushButton("Add")
        button.setFixedSize(70, 70)
-       button.setStyleSheet(f"""QPushButton {{
-         background-color: {self.current_colors['add_friend_button']};
-         border: 2px solid #008080;
-         border-radius: 35px;
-         color: white;
-         font-size: 12px;
-         }}
-         QPushButton:hover {{
-             background-color: {self.current_colors['add_friend_button_hover']};
-         }}""")
        button.clicked.connect(self.show_add_friend_popup)
-       button.setText("Add")
        set_drop_shadow(button)  
        return button
 
-    
     def show_add_friend_popup(self):
-        popup = AddFriendPopup(self)
+        popup = FriendPopup(parent=self)
         if popup.exec_() == QDialog.Accepted:
-           new_friend = popup.get_new_friend_data()
-           if new_friend:
-            self.add_friend(new_friend)
+            new_friend = popup.get_new_friend_data()
+            if new_friend:
+                self.add_friend(new_friend)
         
     def load_friends(self):
         self.clear_friends_container()
-        row = 0
-        col = 0
-        for friend in self.friends:
-            friend_widget = self.create_friend_widget(friend)
-            self.friends_container_layout.addWidget(friend_widget, row, col)
-            col += 1
-            if col > 5:
-                col = 0
-                row += 1
-
+        row, col = 0, 0
+        if self.friend_icons_path and self.friends:
+            for friend in self.friends:
+                friend_widget = FriendWidget(friend, self)
+                set_drop_shadow(friend_widget)
+                self.friends_container_layout.addWidget(friend_widget, row, col)
+                col += 1
+                if col > 5:
+                    col = 0
+                    row += 1
         self.friends_container_layout.addWidget(self.add_friend_button, row, col, alignment=Qt.AlignTop)
-
+        if not self.friend_icons_path:
+            self.add_friend_button.setEnabled(False)
+            self.add_friend_button.setToolTip("Could not create AppData folder. Friend list is disabled.")
+        else:
+            self.add_friend_button.setEnabled(True)
+            self.add_friend_button.setToolTip("")
 
     def clear_friends_container(self):
         while self.friends_container_layout.count():
-             item = self.friends_container_layout.takeAt(0)
-             widget = item.widget()
-             if widget and widget != self.add_friend_button:
-                 widget.deleteLater()
+            item = self.friends_container_layout.takeAt(0)
+            widget = item.widget()
+            if widget and widget != self.add_friend_button:
+                widget.deleteLater()
     
     def add_friend(self, new_friend):
+        if "image" in new_friend and new_friend.get("image") and os.path.exists(new_friend["image"]):
+            thumbnail_path = self.save_friend_thumbnail(new_friend["image"])
+            if thumbnail_path:
+                new_friend["image"] = thumbnail_path
+            else:
+                new_friend["image"] = None
         self.friends.append(new_friend)
         self.save_friends_to_json()
         self.load_friends()
-
        
     def save_friends_to_json(self):
+        if not self.config_file:
+            return
         self.settings["friends"] = self.friends
         try:
             with open(self.config_file, 'w') as file:
@@ -824,634 +886,211 @@ class MainWindow(QWidget):
         except Exception as e:
             print(f"Failed to save friends settings: {e}")
             
-    def create_friend_widget(self, friend):
-        container = QWidget()
-        container.setFixedSize(75, 100)
-        container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container.setStyleSheet("background: transparent;")
-        set_drop_shadow(container)
-
-        image_container = QWidget(container)
-        image_container.setFixedSize(72, 72)
-        image_container_layout = QVBoxLayout(image_container)
-        image_container_layout.setContentsMargins(0, 0, 0, 0)
-        image_container.setStyleSheet(f"border: 1px solid black; border-radius: 36px; background: transparent;")
-        image_container.setStyleSheet(
-            "QWidget {border: 1px solid black; border-radius: 36px; background: transparent;}"
-            "QWidget:hover { border: 3px solid teal; }"
-        )
-
-
-        image_label = QLabel(image_container)
-        image_label.setFixedSize(70, 70)
-        image_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        image_label.setAlignment(Qt.AlignCenter)
-
-        pixmap = self.create_thumbnail(friend.get("image", resource_path(os.path.join("img", "default-profile.png"))), size=70)
-
-        mask = QRegion(0, 0, 70, 70, QRegion.Ellipse)
-        image_label.setMask(mask)
-
-        image_label.setPixmap(pixmap)
-        image_label.setScaledContents(True)
-
-        image_container_layout.addWidget(image_label, alignment=Qt.AlignCenter)
-
-        name_label = QLabel(friend.get("name", "Name"), container)
-        name_label.setStyleSheet("color: white; margin-top: 5px; border:none;")
-        name_label.setAlignment(Qt.AlignCenter)
-
-        code_prefix = friend.get("download_code", "")
-
-        image_label.mousePressEvent = lambda event, code=code_prefix, current_friend=friend: self.handle_friend_image_click(event, code)
-
-        container.mousePressEvent = lambda event, code=code_prefix, current_friend=friend, current_container=container: self.handle_container_click(event, current_container, current_friend)
-
-
-        container_layout.addWidget(image_container, alignment=Qt.AlignCenter)
-        container_layout.addWidget(name_label)
-
-        return container
-
-    def handle_container_click(self, event, container, friend_data):
-        if event.button() == Qt.RightButton:
-            self.show_friend_context_menu(container, friend_data)
-            event.accept()
-        else:
-            event.ignore()
-
-
-    def show_friend_context_menu(self, container, friend_data):
-         menu = QMenu(self)
-         menu.setStyleSheet(
-             f"QMenu {{background-color: rgba(50, 50, 50, 0.8); border: 1px solid #008080; border-radius: 10px; color: white;}} "
-             f"QMenu::item:selected {{background-color: rgba(100, 100, 100, 0.9);}}"
-         )
-         delete_action = menu.addAction("Delete")
-         action = menu.exec_(container.mapToGlobal(container.rect().topLeft()))
-         if action == delete_action:
+    def show_friend_context_menu(self, widget, friend_data):
+        menu = QMenu(self)
+        delete_action = menu.addAction("Delete")
+        edit_action = menu.addAction("Edit")
+        action = menu.exec_(widget.mapToGlobal(widget.rect().topLeft()))
+        if action == delete_action:
             self.delete_friend(friend_data)
-
-    def handle_friend_image_click(self, event, code):
-      if event.button() == Qt.LeftButton:
-        self.execute_croc_command(code)
+        elif action == edit_action:
+            self.show_edit_friend_popup(friend_data)
 
     def delete_friend(self, friend_to_delete):
+        image_filename = friend_to_delete.get("image")
+        if self.friend_icons_path and image_filename:
+            image_path = os.path.join(self.friend_icons_path, image_filename)
+            if os.path.exists(image_path):
+                try:
+                    os.remove(image_path)
+                    print(f"Deleted friend icon: {image_path}")
+                except Exception as e:
+                    print(f"Error deleting friend icon {image_path}: {e}")
         self.friends = [friend for friend in self.friends if friend != friend_to_delete]
         self.save_friends_to_json()
         self.load_friends()
-    
-    def create_thumbnail(self, image_path, size=64):
+
+    def show_edit_friend_popup(self, friend_data):
+        popup = FriendPopup(friend_data, self)
+        if popup.exec_() == QDialog.Accepted:
+            new_friend_data = popup.get_new_friend_data()
+            if new_friend_data:
+                self.edit_friend(friend_data, new_friend_data)
+
+    def edit_friend(self, old_friend_data, new_friend_data):
         try:
-            image = QImage(image_path)
-            if image.isNull():
-                return QPixmap(resource_path(os.path.join("img", "default-profile.png")))
+            index = self.friends.index(old_friend_data)
+            if "image" in new_friend_data and new_friend_data.get("image") and os.path.exists(new_friend_data["image"]) and new_friend_data["image"] != old_friend_data.get("image"):
+                thumbnail_path = self.save_friend_thumbnail(new_friend_data["image"])
+                if thumbnail_path:
+                    new_friend_data["image"] = thumbnail_path
+                else: 
+                    new_friend_data["image"] = old_friend_data.get("image")
+            self.friends[index] = new_friend_data
+            self.save_friends_to_json()
+            self.load_friends()
+        except ValueError:
+            print("Error: could not find friend to edit")
 
-            scaled_image = image.scaled(size, size, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-
-
-            path = QPainterPath()
-            path.addEllipse(0, 0, size, size)
-
-            masked_pixmap = QPixmap(size, size)
-            masked_pixmap.fill(Qt.transparent)
-
-
-            x_offset = (size - scaled_image.width()) // 2
-            y_offset = (size - scaled_image.height()) // 2
-
-            painter = QPainter(masked_pixmap)
-            painter.setRenderHint(QPainter.Antialiasing, True)
-            painter.setClipPath(path)
-            painter.drawPixmap(x_offset, y_offset, QPixmap.fromImage(scaled_image))
-            painter.end()
-
-            return masked_pixmap
-        except Exception:
-            return QPixmap(resource_path(os.path.join("img", "default-profile.png")))
-    
+    def save_friend_thumbnail(self, image_path):
+        if not self.friend_icons_path:
+            return None
+        try:
+            thumbnail = create_circular_thumbnail(image_path, 70)
+            if thumbnail.isNull():
+                return None
+            filename = f"{uuid.uuid4()}.png"
+            thumbnail_path = os.path.join(self.friend_icons_path, filename)
+            thumbnail.save(thumbnail_path, "PNG")
+            return filename
+        except Exception as e:
+            print(f"Failed to save thumbnail: {e}")
+            return None
+        
     def execute_croc_command(self, code):
-      if not code:
-          self.status_label.setText("No code for friend.")
-          self.status_label.setStyleSheet("color: red;")
-          self.clear_message_timer.start(3000)
-          return
-      
-      if self.is_sending:
-          self.status_label.setText("Already sending.")
-          self.status_label.setStyleSheet("color: red;")
-          self.clear_message_timer.start(3000)
-          return
-      
-      self.path_entry.setText(code)
-      self.start_command()
-    
-    def show_settings_popup(self):
-         settings_popup = SettingsPopup(self, self.current_colors)
-         settings_popup.show()
-       
-    def update_theme(self, colors):
-          self.current_colors = colors
-          self.title_label.setStyleSheet(f"color: {self.current_colors['title_bar_button_text']}; font-size: 12px;")
-          self.set_title_bar_button_style(self.minimize_button)
-          self.set_title_bar_button_style(self.close_button)
-          self.settings_button.setStyleSheet(
-            f"QPushButton {{background-color: transparent; color: {self.current_colors['title_bar_button_text']}; border: none; border-radius: 15px; padding: 0px; font-size: {self.current_colors['title_bar_button_font_size']};}}"
-            f"QPushButton:hover {{background-color: {self.current_colors['title_bar_button_hover_color']}; border: {self.current_colors['title_bar_button_hover_border_size']}px solid {self.current_colors['title_bar_button_border']}; padding: 0px; min-width: 30px; min-height: 30px;}}")
+        if not code:
+            self.show_status_message("No code for friend.", "error", 3000)
+            return
+        if self.is_sending:
+            self.show_status_message("Already sending.", "error", 3000)
+            return
+        self.path_entry.setText(code)
+        self.start_download()
 
-          self.title_bar_gradient = QLinearGradient(0, 0, self.width(), self.title_bar_height)
-          self.title_bar_gradient.setColorAt(0, QColor(self.current_colors["background_gradient_start"]))
-          self.title_bar_gradient.setColorAt(1, QColor(self.current_colors["background_gradient_end"]))
-          self.title_bar_palette.setBrush(self.title_bar.backgroundRole(), QBrush(self.title_bar_gradient))
-          self.title_bar.setPalette(self.title_bar_palette)
-
-          self.file_queue_list.setStyleSheet(
-            f"QListWidget {{background-color: {self.current_colors['queue_background']};color: {self.current_colors['queue_text']};border: {self.current_colors['queue_border']};border-radius: 10px;padding: 5px;outline: 0;}}")
-
-          self.path_entry.setStyleSheet(
-            f"QLineEdit {{background-color: {self.current_colors['path_entry_background']};color: {self.current_colors['path_entry_text']};border: 2px solid {self.current_colors['path_entry_border']};border-radius: 10px;padding: 5px;}}"
-            )
-
-          self.clear_path_button.setStyleSheet(
-            f"QPushButton {{background-color: {self.current_colors['clear_button_background']};color: white;border: 2px solid {self.current_colors['path_entry_border']};border-radius: 10px;padding: 5px;}}\n            QPushButton:hover {{background-color: {self.current_colors['clear_button_background_hover']};}}")
-
-          self.send_file_color = self.current_colors["send_button_color"]
-          self.set_button_style(self.send_file_button, self.send_file_color, rounded=True)
-
-          self.progress_bar.setStyleSheet(
-            f"QProgressBar {{border: 2px solid {self.current_colors['progress_bar_border']};border-radius: 5px;background-color: {self.current_colors['progress_bar_background']};text-align: center;color: {self.current_colors['progress_bar_text']};font-size: 14px;}} QProgressBar::chunk {{background-color: {self.current_colors['progress_bar_chunk']};border-radius: 10px;}}")
-          
-          self.file_size_label.setStyleSheet(f"color: {self.current_colors['time_speed_text']}; font-size: 10px; font-style: italic")
-          self.time_remaining_label.setStyleSheet(f"color: {self.current_colors['time_speed_text']}; font-size: 10px; font-style: italic")
-          self.speed_label.setStyleSheet(f"color: {self.current_colors['time_speed_text']}; font-size: 10px; font-style: italic")
-          self.friends_scroll_area.setStyleSheet(f"background-color: {self.current_colors['friends_scroll_background']}; border-radius: 10px;")
-          self.status_frame.setStyleSheet(f"background-color: {self.current_colors['status_frame_background']}; border-radius: 10px;")
-          self.status_label.setStyleSheet(f"color: {self.current_colors['status_text']}; font-size: 14px;")
-          
-          self.output_expand_button.setStyleSheet(
-            f"QPushButton {{background-color: {self.current_colors['output_expand_background']};color: white;border: 0px solid rgba(50, 50, 50, 0.1);border-radius: 15px;}}\n            QPushButton:hover {{background-color: {self.current_colors['output_expand_hover']};}}")
-          
-          self.output_text.setStyleSheet(
-            f"QTextEdit {{background-color: {self.current_colors['output_text_background']};color: {self.current_colors['output_text_color']};border: 2px solid {self.current_colors['output_text_border']};border-radius: 10px;padding: 1px;}}"
-          )
-          self.set_gradient_background()
-
-          for i in range(self.friends_container_layout.count()):
-                item = self.friends_container_layout.itemAt(i)
-                if item and item.widget() != self.add_friend_button:
-                  widget = item.widget()
-                  if widget:
-                   for child in widget.findChildren(QWidget):
-                      if isinstance(child, QWidget) and child.parent() == widget:
-                           child.setStyleSheet(
-                            "QWidget {border: 1px solid black; border-radius: 36px; background: transparent;}"
-                             "QWidget:hover { border: 3px solid teal; }"
-                          )
-                   for name_label in widget.findChildren(QLabel):
-                        if name_label.parent() == widget:
-                            name_label.setStyleSheet("color: white; margin-top: 5px; border:none;")
-          self.add_friend_button.setStyleSheet(f"""QPushButton {{
-            background-color: {self.current_colors['add_friend_button']};
-            border: 2px solid #008080;
-            border-radius: 35px;
-            color: white;
-            font-size: 12px;
-             }}
-              QPushButton:hover {{
-                  background-color: {self.current_colors['add_friend_button_hover']};
-                  }}""")
-          for w in QApplication.topLevelWidgets():
-           if isinstance(w, AddFriendPopup):
-            w.setStyleSheet(f"background-color: {self.current_colors['add_friend_popup_background']}; color: {self.current_colors['add_friend_popup_text']};")
-           if isinstance(w, SettingsPopup):
-              w.setStyleSheet(f"background-color: {self.current_colors['add_friend_popup_background']}; color: {self.current_colors['add_friend_popup_text']};")
-
-
-display_names = {
-    "background_gradient_start": "Background Gradient Start",
-    "background_gradient_end": "Background Gradient End",
-    "queue_background": "Queue Background",
-    "queue_text": "Queue Text",
-    "queue_border": "Queue Border",
-    "path_entry_background": "Path Entry Background",
-    "path_entry_text": "Path Entry Text",
-    "path_entry_border": "Path Entry Border",
-    "clear_button_background": "Clear Button Background",
-    "clear_button_background_hover": "Clear Button Hover Background",
-    "send_button_color": "Send Button Color",
-    "send_button_border": "Send Button Border",
-    "send_button_background": "Send Button Background",
-    "progress_bar_border": "Progress Bar Border",
-    "progress_bar_background": "Progress Bar Background",
-    "progress_bar_text": "Progress Bar Text",
-    "progress_bar_chunk": "Progress Bar Chunk",
-    "time_speed_text": "Time/Speed Text",
-    "friends_scroll_background": "Friends Scroll Background",
-    "status_frame_background": "Status Frame Background",
-    "status_text": "Status Text",
-    "status_shadow": "Status Shadow",
-    "output_expand_background": "Output Expand Background",
-    "output_expand_hover": "Output Expand Hover",
-    "output_text_background": "Output Text Background",
-    "output_text_color": "Output Text Color",
-    "output_text_border": "Output Text Border",
-    "scroll_bar_handle": "Scroll Bar Handle",
-    "add_friend_button": "Add Friend Button",
-    "add_friend_button_hover": "Add Friend Button Hover",
-     "friend_image_border": "Friend Image Border",
-    "add_friend_popup_background": "Add Friend Popup Background",
-    "add_friend_popup_text": "Add Friend Popup Text",
-    "app_context_menu_background": "App Context Menu Background",
-    "app_context_menu_text": "App Context Menu Text",
-    "app_context_menu_border": "App Context Menu Border",
-    "app_context_menu_selected": "App Context Menu Selected",
-     "title_bar_background": "Title Bar Background",
-    "title_bar_button_hover": "Title Bar Button Hover",
-    "title_bar_button_text": "Title Bar Button Text",
-    "title_bar_button_border": "Title Bar Button Border",
-      "minimize_button_color": "Minimize Button Color",
-    "close_button_color": "Close Button Color",
-    "title_bar_button_hover_color": "Title Bar Button Hover Color",
-}
-
-class SettingsPopup(QDialog):
-    def __init__(self, parent, current_colors):
+class FriendPopup(QDialog):
+    def __init__(self, friend_data=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Theme Settings")
-        self.setModal(False)
-        self.setFixedSize(600, 400)
-        self.current_colors = current_colors.copy()
-        self.original_colors = parent.original_default_colors.copy()
-        self.color_pickers = {}
-        self.main_window = parent
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10,10,10,10)
-        self.tabs = QTabWidget()
-        
-        self.general_tab = QWidget()
-        self.background_tab = QWidget()
-        self.border_tab = QWidget()
-
-        self.tabs.addTab(self.general_tab, "General")
-        self.tabs.addTab(self.background_tab, "Background")
-        self.tabs.addTab(self.border_tab, "Border")
-
-        layout.addWidget(self.tabs)
-
-        self.setup_tab_layouts()
-
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(5)
-       
-        reset_button = QPushButton("Reset")
-        reset_button.clicked.connect(self.reset_theme)
-        reset_button.setStyleSheet(
-            "QPushButton {background-color: #444;color: white;border: 2px solid #555;border-radius: 8px;padding: 5px;}\n            QPushButton:hover {background-color: #555;}")
-        button_layout.addWidget(reset_button)
-        
-        save_button = QPushButton("Save")
-        save_button.clicked.connect(self.accept_changes)
-        save_button.setStyleSheet(
-            "QPushButton {background-color: #444;color: white;border: 2px solid #008080;border-radius: 8px;padding: 5px;}\n            QPushButton:hover {background-color: #555;}")
-        button_layout.addWidget(save_button)
-       
-        cancel_button = QPushButton("Cancel")
-        cancel_button.clicked.connect(self.reject_changes)
-        cancel_button.setStyleSheet(
-            "QPushButton {background-color: #444;color: white;border: 2px solid #555;border-radius: 8px;padding: 5px;}\n            QPushButton:hover {background-color: #555;}")
-        button_layout.addWidget(cancel_button)
-        
-        layout.addLayout(button_layout)
-
-        for name, color_button in self.color_pickers.items():
-            self.color_pickers[name] = color_button
-        self.set_gradient_background()
-
-    def setup_tab_layouts(self):
-        self.setup_general_tab()
-        self.setup_background_tab()
-        self.setup_border_tab()
-
-    def setup_general_tab(self):
-       layout = QGridLayout(self.general_tab)
-       layout.setVerticalSpacing(10)  
-       layout.setHorizontalSpacing(10)
-       layout.setContentsMargins(5,5,5,5)
-       row = 0
-       col = 0
-       general_items = [
-            "queue_text",
-             "path_entry_text",
-            "send_button_color",
-            "progress_bar_text",
-            "time_speed_text",
-            "status_text",
-            "output_text_color",
-            "scroll_bar_handle",
-            "add_friend_button",
-            "add_friend_button_hover",
-            "title_bar_button_text",
-            "minimize_button_color",
-            "close_button_color",
-            "title_bar_button_hover_color"
-        ]
-
-       for name in general_items:
-          color = self.current_colors.get(name)
-          if color:
-            label = QLabel(display_names.get(name, name))
-            label.setStyleSheet("color: white;")
-            layout.addWidget(label, row, col * 2, alignment=Qt.AlignLeft)
-
-            color_button = QPushButton()
-            color_button.setFixedSize(30, 30)
-            color_button.setStyleSheet(f"background-color: {color};border-radius: 15px;")
-            color_button.clicked.connect(lambda _, n=name: self.open_color_picker(n))
-            layout.addWidget(color_button, row, col * 2 + 1, alignment=Qt.AlignRight)
-            self.color_pickers[name] = color_button
-
-            col += 1
-            if col > 2:
-               col = 0
-               row += 1
-       layout.setColumnStretch(0,1)
-       layout.setColumnStretch(2,1)
-       layout.setColumnStretch(4,1)
-
-    def setup_background_tab(self):
-        layout = QGridLayout(self.background_tab)
-        layout.setVerticalSpacing(10)
-        layout.setHorizontalSpacing(10)
-        layout.setContentsMargins(5,5,5,5)
-        row = 0
-        col = 0
-        background_items = [
-           "background_gradient_start",
-            "background_gradient_end",
-            "queue_background",
-            "path_entry_background",
-            "clear_button_background",
-            "clear_button_background_hover",
-             "send_button_background",
-            "progress_bar_background",
-            "friends_scroll_background",
-             "status_frame_background",
-             "output_expand_background",
-             "output_expand_hover",
-             "output_text_background",
-             "add_friend_popup_background",
-            "app_context_menu_background",
-             "title_bar_background",
-         ]
-
-        for name in background_items:
-            color = self.current_colors.get(name)
-            if color:
-                label = QLabel(display_names.get(name, name))
-                label.setStyleSheet("color: white;")
-                layout.addWidget(label, row, col * 2, alignment=Qt.AlignLeft)
-
-                color_button = QPushButton()
-                color_button.setFixedSize(30, 30)
-                color_button.setStyleSheet(f"background-color: {color};border-radius: 15px;")
-                color_button.clicked.connect(lambda _, n=name: self.open_color_picker(n))
-                layout.addWidget(color_button, row, col * 2 + 1, alignment=Qt.AlignRight)
-                self.color_pickers[name] = color_button
-
-                col += 1
-                if col > 2:
-                   col = 0
-                   row += 1
-        layout.setColumnStretch(0,1)
-        layout.setColumnStretch(2,1)
-        layout.setColumnStretch(4,1)
-
-
-    def setup_border_tab(self):
-        layout = QGridLayout(self.border_tab)
-        layout.setVerticalSpacing(10)
-        layout.setHorizontalSpacing(10)
-        layout.setContentsMargins(5,5,5,5)
-        row = 0
-        col = 0
-        border_items = [
-           "queue_border",
-            "path_entry_border",
-            "send_button_border",
-            "progress_bar_border",
-            "friend_image_border",
-            "app_context_menu_border",
-            "output_text_border",
-            "title_bar_button_border"
-        ]
-
-        for name in border_items:
-            color = self.current_colors.get(name)
-            if color:
-                label = QLabel(display_names.get(name, name))
-                label.setStyleSheet("color: white;")
-                layout.addWidget(label, row, col * 2, alignment=Qt.AlignLeft)
-
-                color_button = QPushButton()
-                color_button.setFixedSize(30, 30)
-                color_button.setStyleSheet(f"background-color: {color};border-radius: 15px;")
-                color_button.clicked.connect(lambda _, n=name: self.open_color_picker(n))
-                layout.addWidget(color_button, row, col * 2 + 1, alignment=Qt.AlignRight)
-                self.color_pickers[name] = color_button
-                
-                col += 1
-                if col > 2:
-                   col = 0
-                   row += 1
-        layout.setColumnStretch(0,1)
-        layout.setColumnStretch(2,1)
-        layout.setColumnStretch(4,1)
-
-    def open_color_picker(self, name):
-        color = QColorDialog.getColor(QColor(self.current_colors[name]), self)
-        if color.isValid():
-            self.current_colors[name] = color.name()
-            self.color_pickers[name].setStyleSheet(f"background-color: {color.name()};border-radius: 15px;")
-            self.main_window.update_theme(self.current_colors)
-
-    def reset_theme(self):
-       self.current_colors = self.original_colors.copy()
-       for name, color in self.current_colors.items():
-           if name in self.color_pickers:
-                self.color_pickers[name].setStyleSheet(f"background-color: {color};border-radius: 15px;")
-       self.main_window.update_theme(self.current_colors)
-    
-    def accept_changes(self):
-        self.main_window.update_theme(self.current_colors)
-        self.main_window.save_theme_to_json(self.current_colors)
-        self.accept()
-
-    def reject_changes(self):
-       self.main_window.update_theme(self.original_colors)
-       self.reject()
-    
-    def set_gradient_background(self):
-        gradient = QLinearGradient(0, 0, self.width(), self.height())
-        gradient.setColorAt(0, QColor(self.current_colors["background_gradient_start"]))
-        gradient.setColorAt(1, QColor(self.current_colors["background_gradient_end"]))
-
-        palette = self.palette()
-        palette.setBrush(self.backgroundRole(), QBrush(gradient))
-        self.setPalette(palette)
-
-
-    
-    def get_updated_colors(self):
-        return self.current_colors
-    
-class AddFriendPopup(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Add Friend")
+        self.friend_data = friend_data or {}
+        self.new_friend_data = self.friend_data.copy()
+        self.setWindowTitle("Edit Friend" if friend_data else "Add Friend")
         self.setModal(True)
         self.setFixedSize(350, 300)
-        self.setStyleSheet(f"background-color: {default_colors['add_friend_popup_background']}; color: {default_colors['add_friend_popup_text']};")
-        self.new_friend_data = {}
-        self.current_pixmap = None
-        self.error_label = None 
-    
-
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
         layout = QVBoxLayout(self)
-
-        self.profile_preview = QLabel()
+        self.profile_preview = ClickableImageLabel()
         self.profile_preview.setFixedSize(80, 80)
         self.profile_preview.setAlignment(Qt.AlignCenter)
-        self.profile_preview.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        
-        default_pixmap = self.create_default_pixmap(size=80)
-        mask = QRegion(0, 0, 80, 80, QRegion.Ellipse)
-        self.profile_preview.setMask(mask)
-        
-        self.profile_preview.setPixmap(default_pixmap)
-        self.profile_preview.setScaledContents(True)
+        image_filename = self.friend_data.get("image")
+        full_image_path = None
+        if image_filename and self.parent() and hasattr(self.parent(), 'friend_icons_path'):
+            full_image_path = os.path.join(self.parent().friend_icons_path, image_filename)
+        self.profile_preview.setPixmap(create_circular_thumbnail(full_image_path, 80))
+        self.profile_preview.clicked.connect(self.select_profile_image)
         layout.addWidget(self.profile_preview, alignment=Qt.AlignCenter)
-        set_drop_shadow(self.profile_preview) 
-            
-        profile_label = QLabel("Profile:")
-        profile_label.setStyleSheet("color: white;")
-        layout.addWidget(profile_label)
-        
-        self.profile_selector_button = QPushButton("Select Image")
-        self.profile_selector_button.clicked.connect(self.select_profile_image)
-        self.profile_selector_button.setStyleSheet(
-                "QPushButton {background-color: #444;color: white;border: 2px solid #008080;border-radius: 10px;padding: 5px;}\n            QPushButton:hover {background-color: #555;}")
-        layout.addWidget(self.profile_selector_button)
-        set_drop_shadow(self.profile_selector_button)
-        
+        set_drop_shadow(self.profile_preview)
+        bold_font = QFont()
+        bold_font.setBold(True)
         name_label = QLabel("Name:")
-        name_label.setStyleSheet("color: white;")
+        name_label.setFont(bold_font)
         layout.addWidget(name_label)
-        
-        self.name_entry = QLineEdit()
-        self.name_entry.setStyleSheet(
-            "QLineEdit {background-color: #444;color: white;border: 2px solid #008080;border-radius: 10px;padding: 5px;}"
-        )
+        self.name_entry = QLineEdit(self.friend_data.get("name", ""))
+        self.name_entry.setFont(bold_font)
         layout.addWidget(self.name_entry)
-        set_drop_shadow(self.name_entry) 
-        
+        set_drop_shadow(self.name_entry)
         code_label = QLabel("Code:")
-        code_label.setStyleSheet("color: white;")
+        code_label.setFont(bold_font)
         layout.addWidget(code_label)
-
-        self.code_entry = QLineEdit()
-        self.code_entry.setStyleSheet(
-            "QLineEdit {background-color: #444;color: white;border: 2px solid #008080;border-radius: 10px;padding: 5px;}"
-        )
+        self.code_entry = QLineEdit(self.friend_data.get("download_code", ""))
+        self.code_entry.setFont(bold_font)
         layout.addWidget(self.code_entry)
         set_drop_shadow(self.code_entry)
-        
         button_layout = QHBoxLayout()
-        self.save_button = QPushButton("Add")
-        self.save_button.clicked.connect(self.try_add)
-        self.save_button.setDefault(True) 
-        self.save_button.setStyleSheet(
-            "QPushButton {background-color: #444;color: white;border: 2px solid #008080;border-radius: 10px;padding: 5px;}\n            QPushButton:hover {background-color: #555;}")
+        self.save_button = QPushButton("Save" if friend_data else "Add")
+        self.save_button.setFont(bold_font)
+        self.save_button.clicked.connect(self.try_accept)
+        self.save_button.setDefault(True)
         button_layout.addWidget(self.save_button)
         set_drop_shadow(self.save_button)
-        
-        
         cancel_button = QPushButton("Cancel")
+        cancel_button.setFont(bold_font)
+        cancel_button.setObjectName("cancel_button")
         cancel_button.clicked.connect(self.reject)
-        cancel_button.setStyleSheet(
-             "QPushButton {background-color: #444;color: white;border: 2px solid #555;border-radius: 10px;padding: 5px;}\n            QPushButton:hover {background-color: #555;}")
         button_layout.addWidget(cancel_button)
-        set_drop_shadow(cancel_button) 
-        
         layout.addLayout(button_layout)
-        
         self.error_label = QLabel()
         self.error_label.setStyleSheet("color: red;")
+        self.error_label.setFont(bold_font)
         layout.addWidget(self.error_label)
 
-    def add_button_click(self):
-       self.save_button.click() 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.set_rounded_dialog()
+        self.center_dialog()
 
-    def create_default_pixmap(self, size=64):
-        default_image = QImage(resource_path(os.path.join("img", "default-profile.png")))
-        scaled_image = default_image.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        pixmap = QPixmap.fromImage(scaled_image)
-        return pixmap
-        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.old_pos = event.globalPos()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and self.old_pos is not None:
+            delta = event.globalPos() - self.old_pos
+            self.move(self.pos() + delta)
+            self.old_pos = event.globalPos()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.old_pos = None
+        super().mouseReleaseEvent(event)
+
     def select_profile_image(self):
-        file_dialog = QFileDialog()
-        file_path, _ = file_dialog.getOpenFileName(self, "Select Profile Image", "", "Image Files (*.png *.jpg *.jpeg *.bmp)")
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Profile Image", "", "Image Files (*.png *.jpg *.jpeg *.bmp)")
         if file_path:
-          self.new_friend_data["image"] = file_path
-          self.current_pixmap = self.create_thumbnail(file_path, size=80)
-          mask = QRegion(0, 0, 80, 80, QRegion.Ellipse)
-          self.profile_preview.setMask(mask)
-          self.profile_preview.setPixmap(self.current_pixmap)
-
-    def create_thumbnail(self, image_path, size=64):
-            try:
-                image = QImage(image_path)
-                if image.isNull():
-                    return self.create_default_pixmap(size)
-                scaled_image = image.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                pixmap = QPixmap.fromImage(scaled_image)
-                return pixmap
-            except Exception:
-               return self.create_default_pixmap(size)
+            self.new_friend_data["image"] = file_path
+            self.profile_preview.setPixmap(create_circular_thumbnail(file_path, 80))
 
     def get_new_friend_data(self):
         name = self.name_entry.text().strip()
         code = self.code_entry.text().strip()
-        
         if not code:
-           return None
-        
-        friend_data = {}
-        if name:
-           friend_data["name"] = name
-        friend_data["download_code"] = code
-        if "image" in self.new_friend_data:
-            friend_data["image"] = self.new_friend_data["image"]
-        self.new_friend_data = {}
-        return friend_data
+            return None
+        self.new_friend_data["name"] = name
+        self.new_friend_data["download_code"] = code
+        return self.new_friend_data
 
-    def try_add(self):
-         code = self.code_entry.text().strip()
-         if not code:
-              self.error_label.setText("Code required")
-              return
-         else:
-              self.error_label.clear()
+    def try_accept(self):
+        if not self.code_entry.text().strip():
+            self.error_label.setText("Code required")
+            return
+        self.accept()
 
-         self.accept() 
+    def set_rounded_dialog(self):
+        path = QPainterPath()
+        rect = self.rect()
+        path.addRoundedRect(rect.x(), rect.y(), rect.width(), rect.height(), 15, 15)
+        polygons = path.toSubpathPolygons()
+        if polygons:
+            qpolygon = QPolygon()
+            for point in polygons[0]:
+                qpolygon.append(QPoint(int(point.x()), int(point.y())))
+            region = QRegion(qpolygon)
+            self.setMask(region)
+
+    def center_dialog(self):
+        if self.parent():
+            parent_center_global = self.parent().mapToGlobal(self.parent().rect().center())
+            dialog_width = self.width()
+            dialog_height = self.height()
+            new_x = parent_center_global.x() - (dialog_width // 2)
+            new_y = parent_center_global.y() - (dialog_height // 2)
+            self.move(new_x, new_y)
+        else:
+            qr = self.frameGeometry()
+            cp = QDesktopWidget().availableGeometry().center()
+            qr.moveCenter(cp)
+            self.move(qr.topLeft())
 
 if __name__ == '__main__':
+    handle_instance_check()
     if is_windows():
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("myappid")
-        
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(resource_path("iMShare.ico")))
+    style_file = resource_path("download.qss")
+    if os.path.exists(style_file):
+        with open(style_file, "r") as f:
+            app.setStyleSheet(f.read())
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
