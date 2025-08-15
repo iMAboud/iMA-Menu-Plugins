@@ -95,5 +95,9 @@
                 "name": "ffmpeg.exe"
             }
         ]
+    },
+    {
+        "name": "Launcher",
+        "version": "1.0.0"
     }
 ]
