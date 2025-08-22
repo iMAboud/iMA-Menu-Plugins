@@ -63,7 +63,7 @@
         "name": "Imgur",
         "description": "uploads images to imgur instantly",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Imgur/Imgur.png",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "install_path": "iMA Menu/plugins/Imgur",
         "nss_file": "Imgur.nss",
         "nss_path": "iMA Menu/plugins/Imgur",
