@@ -54,7 +54,7 @@
         "name": "Hex",
         "description": "captures the hex color of anything on desktop",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Hex/hex.png",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "install_path": "iMA Menu/plugins/Hex",
         "nss_file": "Hex.nss",
         "nss_path": "iMA Menu/plugins/Hex"
