@@ -12,17 +12,17 @@ set "Images=png jpg jpeg gif bmp webp tif tiff ico heic jfif avif svg psd ai eps
 set "Videos=mp4 mkv mov avi wmv flv webm mpg mpeg m4v 3gp ts m2ts ogv asf wtv dvr-ms divx xvid f4v swf rm rmvb"
 set "Audio=mp3 wav flac ogg aac m4a wma opus amr aif aiff mid midi caf weba alac m4b dss ac3 aifc"
 set "Documents=pdf doc docx docm rtf txt md markdown csv tsv xls xlsx xlsm xlsb ppt pptx pps ppsx odt ods odp epub mobi azw azw3 chm onenote vsd pub lit ps"
-set "Scripts=bat cmd ps1 psd1 psm1 vbs vbe js jse wsf wsh py pyw rb pl php go cs java class c cpp cc cxx h hpp hxx rs kt kts swift lua ts tsx jsx json yml yaml ini cfg toml env reg sql sh bash zsh csh ksh tcl vim html htm css conf properties"
+set "Scripts=bat cmd ps1 psd1 psm1 vbs vbe js jse wsf wsh py pyw rb pl php go cs java class c cpp cc cxx h hpp hxx rs kt kts swift lua ts tsx jsx json yml yaml ini cfg toml env reg sql sh bash zsh csh ksh tcl vim html htm css conf properties manifest"
 set "Executables=exe msi msp msu appx appxbundle msix msixbundle app com scr cab"
 set "Compressed=zip rar 7z tar gz bz2 xz zst tgz tbz tbz2 txz cab iso img bin cue dmg vhd vhdx rar5 udf daa"
 set "Fonts=ttf otf woff woff2 eot fon"
 set "Subtitles=srt ass vtt sub idx sup"
 set "Shortcuts=lnk url webloc"
 set "Torrents=torrent"
-set "3D Models=obj stl dae fbx 3ds max blend"
+set "3D_Models=obj stl dae fbx 3ds max blend"
 set "Geographic=shp kml gpx kmz gdb"
 set "Databases=db sql sqlite mdb accdb"
-set "Web Assets=xml xsl xsd"
+set "Web_Assets=xml xsl xsd"
 set "Other="
 
 :loop
@@ -41,7 +41,7 @@ if exist "!filePath!\" (
 set "fileExt=!fileExt:.=!"
 
 set "destinationFolder="
-for %%F in (Images Videos Audio Documents Scripts Executables Compressed Fonts Subtitles Shortcuts Torrents) do (
+for %%F in (Images Videos Audio Documents Scripts Executables Compressed Fonts Subtitles Shortcuts Torrents 3D_Models Geographic Databases Web_Assets) do (
     for %%E in (!%%F!) do (
         if /i "!fileExt!"=="%%E" (
             set "destinationFolder=%%F"
@@ -57,6 +57,9 @@ if not defined fileExt set "fileExt=unknown"
 set "fullDestinationPath=%parentDir%!destinationFolder!\!fileExt!\"
 
 if not exist "%fullDestinationPath%" mkdir "%fullDestinationPath%"
+
+:: Remove hidden and read-only attributes before moving
+attrib -h -r "!filePath!"
 
 move /y "!filePath!" "%fullDestinationPath%" >nul
 
