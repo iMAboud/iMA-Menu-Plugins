@@ -3,7 +3,7 @@
         "name": "iMShare",
         "description": "Send and receive files between devices with no limit.",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/iMShare/imshare.png",
-        "version": "1.0.3",
+        "version": "1.0.4",
         "launch": true,
         "launch_file": "upload.exe",
         "install_path": "iMA Menu/plugins/iMShare",
