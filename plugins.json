@@ -77,7 +77,7 @@
         "name": "Reset",
         "description": "Resets Network with ipconfig",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Reset/reset.png",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "install_path": "iMA Menu/plugins/Reset",
         "nss_file": "Reset.nss",
         "nss_path": "iMA Menu/plugins/Reset"
