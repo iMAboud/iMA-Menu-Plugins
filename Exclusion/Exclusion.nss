@@ -1,1 +1,8 @@
-item(type='file|dir|back.dir|drive' title='Add Exclusion' cmd='cmd.exe' args='/c powershell.exe -WindowStyle Hidden -command "Set-Clipboard -Value \"@sel.path\"" & start "" "@app.dir\plugins\Exclusion\Add-Exclusion.bat"' image=\uE194 menu='manage')
+item(title="Add Exclusion"  
+     type="file|dir|back.dir|drive" 
+     menu='manage'
+     image=\uE194
+     admin  
+     cmd='powershell.exe'  
+     args='-NoProfile -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath \"@sel.path\""'  
+     window=show)
