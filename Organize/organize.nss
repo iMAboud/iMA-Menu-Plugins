@@ -1,19 +1,9 @@
-menu(type='file|dir' mode="multiple" title='Organize Files' image=\uE290)
-{
 item(
     type="file|dir"
     mode="multiple"
-    title="Simple"
+    where=sel.count>=2
+    title="Organize"
     cmd='"@app.dir\plugins\organize\simple.bat"'
     args='@sel(true)'
     image=\uE262
 )
-item(  
-    type="file|dir"  
-    mode="multiple"  
-    title="Advanced"  
-    cmd='"@app.dir\plugins\organize\advanced.bat"'  
-    args='@sel(true)'
-    image=\uE268
-)  
-}
