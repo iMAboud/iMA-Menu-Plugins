@@ -3,7 +3,7 @@ item(title='Youtube'  image=\uE248 where = '@(str.contains(clipboard.get, "Youtu
 
 
 item(title='X' where = '@(str.contains(clipboard.get, "x.com"))' cmd='@app.dir\plugins\yt\yt.exe'
-image='icons\x.png')
+image='@app.dir\plugins\YT\icons\x.png')
 
 
 item(title='Twitch'  image=\uE241 where = '@(str.contains(clipboard.get, "twitch.tv"))' cmd='@app.dir\plugins\yt\yt.exe')
