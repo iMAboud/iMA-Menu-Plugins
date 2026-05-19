@@ -1,7 +1,7 @@
 [
     {
         "name": "iMShare",
-        "description": "Send and receive files between devices with no limit.",
+        "description": "Send and receive files between devices, no limit.",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/iMShare/imshare.png",
         "version": "1.0.6",
         "launch": true,
@@ -104,5 +104,23 @@
         "install_path": "iMA Menu/plugins/organize",
         "nss_file": "organize.nss",
         "nss_path": "iMA Menu/plugins/Organize"
+    },
+    {
+        "name": "End",
+        "description": "Unlock files and folders by ending locking processes.",
+        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/End/end.png",
+        "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/End",
+        "nss_file": "end.nss",
+        "nss_path": "iMA Menu/plugins/End"
+    },
+    {
+        "name": "BGR",
+        "description": "Remove background from images, gifs and videos locally.",
+        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/BGR/bgr.png",
+        "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/BGR",
+        "nss_file": "bgr.nss",
+        "nss_path": "iMA Menu/plugins/BGR"
     }
 ]
