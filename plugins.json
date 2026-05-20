@@ -104,5 +104,14 @@
         "install_path": "iMA Menu/plugins/organize",
         "nss_file": "organize.nss",
         "nss_path": "iMA Menu/plugins/Organize"
+    },
+    {
+        "name": "End",
+        "description": "Unlock files and folders by ending locking processes.",
+        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/End/end.png",
+        "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/End",
+        "nss_file": "end.nss",
+        "nss_path": "iMA Menu/plugins/End"
     }
 ]
