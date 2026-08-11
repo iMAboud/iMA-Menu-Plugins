@@ -1,1 +1,1 @@
-item(title='Wallpaper' cmd='powershell.exe' args='-ExecutionPolicy Bypass -File "@app.dir\plugins\wall\wall.ps1"' window=hidden image=["\uE150"])
+item(title='Wallpaper' cmd='powershell.exe' args='-ExecutionPolicy Bypass -File "@app.dir\plugins\wall\wall.ps1"' window=hidden image=["\uE150"] menu='options')
