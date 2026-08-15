@@ -132,7 +132,7 @@ jobs:
           import json, os, urllib.request
 
           repo = os.environ.get('REPO_NAME', 'iMAboud/iMA-Menu-Plugins')
-          tag_raw = os.environ.get('RELEASE_TAG', '')
+          tag_raw = os.environ.get('RELEASE_TAG', '').strip()
           assets_raw = os.environ.get('RELEASE_ASSETS', '[]')
           token = os.environ.get('GITHUB_TOKEN', '')
 
@@ -144,10 +144,10 @@ jobs:
               )
               with urllib.request.urlopen(req) as resp:
                   rel_data = json.loads(resp.read().decode('utf-8'))
-                  tag_raw = rel_data.get('tag_name', '')
+                  tag_raw = str(rel_data.get('tag_name', '')).strip()
                   assets_raw = json.dumps(rel_data.get('assets', []))
 
-          tag = tag_raw.lstrip('vV').strip()
+          tag_clean = tag_raw.lstrip('vV').strip()
           try:
               assets = json.loads(assets_raw)
           except Exception:
@@ -159,18 +159,19 @@ jobs:
                   download_url = asset.get('browser_download_url')
                   break
 
+          # Fallback if asset list is empty or processing
           if not download_url:
               download_url = f"https://github.com/{repo}/releases/download/{tag_raw}/launcher.exe"
 
           manifest = {
-              "version": tag,
+              "version": tag_clean,
               "download_url": download_url
           }
 
           with open('version.json', 'w', encoding='utf-8') as f:
               json.dump(manifest, f, indent=2, ensure_ascii=False)
 
-          print(f"Updated version.json -> version: {tag}, download_url: {download_url}")
+          print(f"Updated version.json -> version: {tag_clean}, download_url: {download_url}")
           EOF
 
       - name: Commit & Push Updated version.json
