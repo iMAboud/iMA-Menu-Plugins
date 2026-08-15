@@ -27,15 +27,6 @@
         "nss_path": "iMA Menu/plugins/Wall"
     },
     {
-        "name": "TTS",
-        "description": "Text to Speech AI-Realistic Voices",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/TTS/tts.png",
-        "version": "1.0.0",
-        "install_path": "iMA Menu/plugins/TTS",
-        "nss_file": "tts.nss",
-        "nss_path": "iMA Menu/plugins/TTS"
-    },
-    {
         "name": "Organize",
         "description": "Auto sort your desktop & downloads in folders",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Organize/organize.png",
