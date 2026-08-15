@@ -122,5 +122,14 @@
         "install_path": "iMA Menu/plugins/Wall",
         "nss_file": "wall.nss",
         "nss_path": "iMA Menu/plugins/Wall"
+    },
+    {
+        "name": "Source",
+        "description": "Quick source inspection (Hold Shift on file/folder)",
+        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Source/source.png",
+        "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/Source",
+        "nss_file": "Source.nss",
+        "nss_path": "iMA Menu/plugins/Source"
     }
 ]
