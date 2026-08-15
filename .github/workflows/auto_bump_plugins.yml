@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'plugins/**'
-      - '!plugins.json'
+    paths-ignore:
+      - 'plugins.json'
+      - '.github/**'
+      - 'README.md'
+      - '.gitignore'
 
 permissions:
   contents: write
@@ -41,15 +43,19 @@ jobs:
 
           diff_output = subprocess.check_output(diff_cmd, text=True).splitlines()
 
-          changed_plugins = set()
+          # Any top-level folder modified that is not a meta folder
+          ignored_roots = {'.github', '.git', 'cache', 'icons', 'lib'}
+          changed_folders = set()
           for file in diff_output:
               parts = file.strip().replace('\\', '/').split('/')
-              if len(parts) > 1 and parts[0].lower() == 'plugins':
-                  changed_plugins.add(parts[1].lower())
+              if len(parts) > 1 and parts[0].lower() not in ignored_roots:
+                  changed_folders.add(parts[0].lower())
 
-          if not changed_plugins:
+          if not changed_folders:
               print("No plugin folder changes detected.")
               exit(0)
+
+          print(f"Detected changed folders: {changed_folders}")
 
           if not os.path.exists('plugins.json'):
               print("plugins.json not found.")
@@ -63,7 +69,10 @@ jobs:
               if not isinstance(p, dict) or 'name' not in p:
                   continue
               p_name = p['name'].strip()
-              if p_name.lower() in changed_plugins:
+              
+              # Match plugin name or install_path folder against modified top-level folder
+              folder_name = p.get('install_path', '').replace('\\', '/').split('/')[-1].lower()
+              if p_name.lower() in changed_folders or folder_name in changed_folders:
                   old_v = str(p.get('version', '1.0.0')).strip()
                   parts = old_v.split('.')
                   while len(parts) < 3:
