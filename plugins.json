@@ -131,5 +131,14 @@
         "install_path": "iMA Menu/plugins/Source",
         "nss_file": "Source.nss",
         "nss_path": "iMA Menu/plugins/Source"
+    },
+    {
+        "name": "Temp Mail",
+        "description": "Generate disposable temp emails & verification codes",
+        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/temp%20mail/mail.png",
+        "version": "1.0.0",
+        "install_path": "iMA Menu/plugins/temp mail",
+        "nss_file": "mail.nss",
+        "nss_path": "iMA Menu/plugins/temp mail"
     }
 ]
