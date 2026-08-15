@@ -1,144 +1,144 @@
 [
-    {
-        "name": "Temp Mail",
-        "description": "Generate disposable temp emails & verification codes",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/temp%20mail/mail.png",
-        "version": "1.0.0",
-        "install_path": "iMA Menu/plugins/temp mail",
-        "nss_file": "mail.nss",
-        "nss_path": "iMA Menu/plugins/temp mail"
-    },
-    {
-        "name": "Source",
-        "description": "Quick source inspection (Hold Shift on file/folder)",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Source/source.png",
-        "version": "1.0.0",
-        "install_path": "iMA Menu/plugins/Source",
-        "nss_file": "Source.nss",
-        "nss_path": "iMA Menu/plugins/Source"
-    },
-    {
-        "name": "Wall",
-        "description": "Set random high-quality desktop wallpaper",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Wall/wall.png",
-        "version": "1.0.1",
-        "install_path": "iMA Menu/plugins/Wall",
-        "nss_file": "wall.nss",
-        "nss_path": "iMA Menu/plugins/Wall"
-    },
-    {
-        "name": "End",
-        "description": "Unlock files and folders by ending locking processes.",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/End/end.png",
-        "version": "1.0.2",
-        "install_path": "iMA Menu/plugins/End",
-        "nss_file": "end.nss",
-        "nss_path": "iMA Menu/plugins/End"
-    },
-    {
-        "name": "Organize",
-        "description": "Auto organize files into structured folders",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Organize/organize.png",
-        "version": "1.0.0",
-        "install_path": "iMA Menu/plugins/organize",
-        "nss_file": "organize.nss",
-        "nss_path": "iMA Menu/plugins/Organize"
-    },
-    {
-        "name": "Resize",
-        "description": "Reduces bulk images sizes",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Resize/resize.png",
-        "version": "1.0.2",
-        "install_path": "iMA Menu/plugins/Resize",
-        "nss_file": "Resize.nss",
-        "nss_path": "iMA Menu/plugins/Resize",
-        "dependencies": [
-            {
-                "name": "ffmpeg.exe"
-            }
-        ]
-    },
-    {
-        "name": "Reset",
-        "description": "Resets Network with ipconfig",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Reset/reset.png",
-        "version": "1.0.1",
-        "install_path": "iMA Menu/plugins/Reset",
-        "nss_file": "Reset.nss",
-        "nss_path": "iMA Menu/plugins/Reset"
-    },
-    {
-        "name": "Imgur",
-        "description": "uploads images to imgur instantly",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Imgur/Imgur.png",
-        "version": "1.0.1",
-        "install_path": "iMA Menu/plugins/Imgur",
-        "nss_file": "Imgur.nss",
-        "nss_path": "iMA Menu/plugins/Imgur",
-        "dependencies": [
-            {
-                "name": "ffmpeg.exe"
-            }
-        ]
-    },
-    {
-        "name": "Hex",
-        "description": "captures the hex color of anything on desktop",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Hex/hex.png",
-        "version": "1.0.1",
-        "install_path": "iMA Menu/plugins/Hex",
-        "nss_file": "Hex.nss",
-        "nss_path": "iMA Menu/plugins/Hex"
-    },
-    {
-        "name": "Exclusion",
-        "description": "Add exclusion to Windows Security",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Exclusion/exclusion.png",
-        "version": "1.0.1",
-        "install_path": "iMA Menu/plugins/Exclusion",
-        "nss_file": "Exclusion.nss",
-        "nss_path": "iMA Menu/plugins/Exclusion"
-    },
-    {
-        "name": "Draw",
-        "description": "Draw over any app or desktop",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Draw/draw.png",
-        "version": "1.0.4",
-        "install_path": "iMA Menu/plugins/Draw",
-        "nss_file": "Draw.nss",
-        "nss_path": "iMA Menu/plugins/Draw"
-    },
-    {
-        "name": "YT",
-        "description": "Downloads any video as video or audio",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/YT/yt.png",
-        "version": "1.0.4",
-        "install_path": "iMA Menu/plugins/YT",
-        "nss_file": "YT.nss",
-        "nss_path": "iMA Menu/plugins/YT",
-        "dependencies": [
-            {
-                "name": "yt-dlp.exe"
-            },
-            {
-                "name": "ffmpeg.exe"
-            }
-        ]
-    },
-    {
-        "name": "iMShare",
-        "description": "Send and receive files between devices, no limit.",
-        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/iMShare/imshare.png",
-        "version": "1.0.6",
-        "launch": true,
-        "launch_file": "upload.exe",
-        "install_path": "iMA Menu/plugins/iMShare",
-        "nss_file": "iMShare.nss",
-        "nss_path": "iMA Menu/plugins/iMShare",
-        "dependencies": [
-            {
-                "name": "croc.exe"
-            }
-        ]
-    }
+  {
+    "name": "Temp Mail",
+    "description": "Generate disposable temp emails & verification codes",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/temp%20mail/mail.png",
+    "version": "1.0.0",
+    "install_path": "iMA Menu/plugins/temp mail",
+    "nss_file": "mail.nss",
+    "nss_path": "iMA Menu/plugins/temp mail"
+  },
+  {
+    "name": "Source",
+    "description": "Quick source inspection (Hold Shift on file/folder)",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Source/source.png",
+    "version": "1.0.0",
+    "install_path": "iMA Menu/plugins/Source",
+    "nss_file": "Source.nss",
+    "nss_path": "iMA Menu/plugins/Source"
+  },
+  {
+    "name": "Wall",
+    "description": "Set random high-quality desktop wallpaper",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Wall/wall.png",
+    "version": "1.0.1",
+    "install_path": "iMA Menu/plugins/Wall",
+    "nss_file": "wall.nss",
+    "nss_path": "iMA Menu/plugins/Wall"
+  },
+  {
+    "name": "End",
+    "description": "Unlock files and folders by ending locking processes.",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/End/end.png",
+    "version": "1.0.2",
+    "install_path": "iMA Menu/plugins/End",
+    "nss_file": "end.nss",
+    "nss_path": "iMA Menu/plugins/End"
+  },
+  {
+    "name": "Organize",
+    "description": "Auto organize files into structured folders",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Organize/organize.png",
+    "version": "1.0.0",
+    "install_path": "iMA Menu/plugins/organize",
+    "nss_file": "organize.nss",
+    "nss_path": "iMA Menu/plugins/Organize"
+  },
+  {
+    "name": "Resize",
+    "description": "Reduces bulk images sizes",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Resize/resize.png",
+    "version": "1.0.2",
+    "install_path": "iMA Menu/plugins/Resize",
+    "nss_file": "Resize.nss",
+    "nss_path": "iMA Menu/plugins/Resize",
+    "dependencies": [
+      {
+        "name": "ffmpeg.exe"
+      }
+    ]
+  },
+  {
+    "name": "Reset",
+    "description": "Resets Network with ipconfig",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Reset/reset.png",
+    "version": "1.0.1",
+    "install_path": "iMA Menu/plugins/Reset",
+    "nss_file": "Reset.nss",
+    "nss_path": "iMA Menu/plugins/Reset"
+  },
+  {
+    "name": "Imgur",
+    "description": "uploads images to imgur instantly",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Imgur/Imgur.png",
+    "version": "1.0.2",
+    "install_path": "iMA Menu/plugins/Imgur",
+    "nss_file": "Imgur.nss",
+    "nss_path": "iMA Menu/plugins/Imgur",
+    "dependencies": [
+      {
+        "name": "ffmpeg.exe"
+      }
+    ]
+  },
+  {
+    "name": "Hex",
+    "description": "captures the hex color of anything on desktop",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Hex/hex.png",
+    "version": "1.0.1",
+    "install_path": "iMA Menu/plugins/Hex",
+    "nss_file": "Hex.nss",
+    "nss_path": "iMA Menu/plugins/Hex"
+  },
+  {
+    "name": "Exclusion",
+    "description": "Add exclusion to Windows Security",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Exclusion/exclusion.png",
+    "version": "1.0.1",
+    "install_path": "iMA Menu/plugins/Exclusion",
+    "nss_file": "Exclusion.nss",
+    "nss_path": "iMA Menu/plugins/Exclusion"
+  },
+  {
+    "name": "Draw",
+    "description": "Draw over any app or desktop",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Draw/draw.png",
+    "version": "1.0.4",
+    "install_path": "iMA Menu/plugins/Draw",
+    "nss_file": "Draw.nss",
+    "nss_path": "iMA Menu/plugins/Draw"
+  },
+  {
+    "name": "YT",
+    "description": "Downloads any video as video or audio",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/YT/yt.png",
+    "version": "1.0.4",
+    "install_path": "iMA Menu/plugins/YT",
+    "nss_file": "YT.nss",
+    "nss_path": "iMA Menu/plugins/YT",
+    "dependencies": [
+      {
+        "name": "yt-dlp.exe"
+      },
+      {
+        "name": "ffmpeg.exe"
+      }
+    ]
+  },
+  {
+    "name": "iMShare",
+    "description": "Send and receive files between devices, no limit.",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/iMShare/imshare.png",
+    "version": "1.0.6",
+    "launch": true,
+    "launch_file": "upload.exe",
+    "install_path": "iMA Menu/plugins/iMShare",
+    "nss_file": "iMShare.nss",
+    "nss_path": "iMA Menu/plugins/iMShare",
+    "dependencies": [
+      {
+        "name": "croc.exe"
+      }
+    ]
+  }
 ]
