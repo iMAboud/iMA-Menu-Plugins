@@ -1,4 +1,4 @@
-name: Auto Bump Plugin Versions
+name: Auto Bump Plugins and Launcher Manifest
 
 on:
   push:
@@ -6,17 +6,23 @@ on:
       - main
     paths-ignore:
       - 'plugins.json'
+      - 'version.json'
       - '.github/**'
       - 'README.md'
       - '.gitignore'
+  release:
+    types: [published]
 
 permissions:
   contents: write
 
 jobs:
-  bump-version:
+  # -------------------------------------------------------------
+  # Job 1: Auto-bump plugin versions when plugin files are pushed
+  # -------------------------------------------------------------
+  bump-plugins:
+    if: github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,7 +49,6 @@ jobs:
 
           diff_output = subprocess.check_output(diff_cmd, text=True).splitlines()
 
-          # Any top-level folder modified that is not a meta folder
           ignored_roots = {'.github', '.git', 'cache', 'icons', 'lib'}
           changed_folders = set()
           for file in diff_output:
@@ -69,8 +74,6 @@ jobs:
               if not isinstance(p, dict) or 'name' not in p:
                   continue
               p_name = p['name'].strip()
-              
-              # Match plugin name or install_path folder against modified top-level folder
               folder_name = p.get('install_path', '').replace('\\', '/').split('/')[-1].lower()
               if p_name.lower() in changed_folders or folder_name in changed_folders:
                   old_v = str(p.get('version', '1.0.0')).strip()
@@ -84,7 +87,7 @@ jobs:
                       print(f"Auto-bumped '{p_name}': {old_v} -> {new_v}")
                       updated_any = True
                   except ValueError:
-                      print(f"Skipping non-standard version format on {p_name}: {old_v}")
+                      pass
 
           if updated_any:
               with open('plugins.json', 'w', encoding='utf-8') as f:
@@ -100,4 +103,55 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add plugins.json
           git commit -m "chore(plugins): auto-bump plugin versions [skip ci]"
+          git push
+
+  # -----------------------------------------------------------------
+  # Job 2: Auto-update version.json when a new GitHub Release is created
+  # -----------------------------------------------------------------
+  sync-launcher-release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Update version.json with Release Tag & Download URL
+        run: |
+          python - << 'EOF'
+          import json, os
+
+          tag = "${{ github.event.release.tag_name }}".lstrip('vV').strip()
+          assets = json.loads('''${{ toJson(github.event.release.assets) }}''')
+
+          download_url = None
+          for asset in assets:
+              if asset.get('name', '').lower() == 'launcher.exe':
+                  download_url = asset.get('browser_download_url')
+                  break
+
+          if not download_url:
+              download_url = f"https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/launcher.exe"
+
+          manifest = {
+              "version": tag,
+              "download_url": download_url
+          }
+
+          with open('version.json', 'w', encoding='utf-8') as f:
+              json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+          print(f"Updated version.json for launcher version {tag} -> {download_url}")
+          EOF
+
+      - name: Commit & Push Updated version.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add version.json
+          git commit -m "chore(launcher): sync version.json with release ${{ github.event.release.tag_name }} [skip ci]"
           git push
