@@ -11,7 +11,8 @@ on:
       - 'README.md'
       - '.gitignore'
   release:
-    types: [published, created]
+    types: [published, created, edited]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -106,15 +107,16 @@ jobs:
           git push
 
   # -----------------------------------------------------------------
-  # Job 2: Auto-update version.json when a new GitHub Release is created
+  # Job 2: Auto-update version.json from GitHub Release
   # -----------------------------------------------------------------
   sync-launcher-release:
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name }}
       RELEASE_ASSETS: ${{ toJSON(github.event.release.assets) }}
       REPO_NAME: ${{ github.repository }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -124,16 +126,28 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Update version.json with Release Tag & Download URL
+      - name: Update version.json with Latest Release Tag & Download URL
         run: |
           python - << 'EOF'
-          import json, os
+          import json, os, urllib.request
 
-          tag_raw = os.environ.get('RELEASE_TAG', '')
-          tag = tag_raw.lstrip('vV').strip()
-          assets_raw = os.environ.get('RELEASE_ASSETS', '[]')
           repo = os.environ.get('REPO_NAME', 'iMAboud/iMA-Menu-Plugins')
+          tag_raw = os.environ.get('RELEASE_TAG', '')
+          assets_raw = os.environ.get('RELEASE_ASSETS', '[]')
+          token = os.environ.get('GITHUB_TOKEN', '')
 
+          # If triggered manually via workflow_dispatch, fetch latest release via API
+          if not tag_raw:
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/releases/latest",
+                  headers={"User-Agent": "GitHub-Action", "Authorization": f"Bearer {token}"}
+              )
+              with urllib.request.urlopen(req) as resp:
+                  rel_data = json.loads(resp.read().decode('utf-8'))
+                  tag_raw = rel_data.get('tag_name', '')
+                  assets_raw = json.dumps(rel_data.get('assets', []))
+
+          tag = tag_raw.lstrip('vV').strip()
           try:
               assets = json.loads(assets_raw)
           except Exception:
@@ -156,7 +170,7 @@ jobs:
           with open('version.json', 'w', encoding='utf-8') as f:
               json.dump(manifest, f, indent=2, ensure_ascii=False)
 
-          print(f"Updated version.json for launcher version {tag} -> {download_url}")
+          print(f"Updated version.json -> version: {tag}, download_url: {download_url}")
           EOF
 
       - name: Commit & Push Updated version.json
@@ -164,5 +178,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add version.json
-          git commit -m "chore(launcher): sync version.json with release ${{ github.event.release.tag_name }} [skip ci]"
+          git diff --quiet && git diff --staged --quiet || git commit -m "chore(launcher): sync version.json [skip ci]"
           git push
