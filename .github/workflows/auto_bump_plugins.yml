@@ -1,0 +1,94 @@
+name: Auto Bump Plugin Versions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/**'
+      - '!plugins.json'
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Detect Changed Plugins and Increment Version
+        run: |
+          python - << 'EOF'
+          import json, subprocess, os
+
+          before_sha = "${{ github.event.before }}"
+          after_sha = "${{ github.sha }}"
+
+          if before_sha == "0000000000000000000000000000000000000000" or not before_sha:
+              diff_cmd = ['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', after_sha]
+          else:
+              diff_cmd = ['git', 'diff', '--name-only', before_sha, after_sha]
+
+          diff_output = subprocess.check_output(diff_cmd, text=True).splitlines()
+
+          changed_plugins = set()
+          for file in diff_output:
+              parts = file.strip().replace('\\', '/').split('/')
+              if len(parts) > 1 and parts[0].lower() == 'plugins':
+                  changed_plugins.add(parts[1].lower())
+
+          if not changed_plugins:
+              print("No plugin folder changes detected.")
+              exit(0)
+
+          if not os.path.exists('plugins.json'):
+              print("plugins.json not found.")
+              exit(0)
+
+          with open('plugins.json', 'r', encoding='utf-8') as f:
+              plugins = json.load(f)
+
+          updated_any = False
+          for p in plugins:
+              if not isinstance(p, dict) or 'name' not in p:
+                  continue
+              p_name = p['name'].strip()
+              if p_name.lower() in changed_plugins:
+                  old_v = str(p.get('version', '1.0.0')).strip()
+                  parts = old_v.split('.')
+                  while len(parts) < 3:
+                      parts.append('0')
+                  try:
+                      parts[-1] = str(int(parts[-1]) + 1)
+                      new_v = '.'.join(parts)
+                      p['version'] = new_v
+                      print(f"Auto-bumped '{p_name}': {old_v} -> {new_v}")
+                      updated_any = True
+                  except ValueError:
+                      print(f"Skipping non-standard version format on {p_name}: {old_v}")
+
+          if updated_any:
+              with open('plugins.json', 'w', encoding='utf-8') as f:
+                  json.dump(plugins, f, indent=2, ensure_ascii=False)
+              with open(os.environ['GITHUB_ENV'], 'a') as env_file:
+                  env_file.write("HAS_BUMP=true\n")
+          EOF
+
+      - name: Commit & Push Updated plugins.json
+        if: env.HAS_BUMP == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins.json
+          git commit -m "chore(plugins): auto-bump plugin versions [skip ci]"
+          git push
