@@ -11,7 +11,7 @@ on:
       - 'README.md'
       - '.gitignore'
   release:
-    types: [published]
+    types: [published, created]
 
 permissions:
   contents: write
@@ -111,6 +111,10 @@ jobs:
   sync-launcher-release:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      RELEASE_ASSETS: ${{ toJSON(github.event.release.assets) }}
+      REPO_NAME: ${{ github.repository }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -125,8 +129,15 @@ jobs:
           python - << 'EOF'
           import json, os
 
-          tag = "${{ github.event.release.tag_name }}".lstrip('vV').strip()
-          assets = json.loads('''${{ toJson(github.event.release.assets) }}''')
+          tag_raw = os.environ.get('RELEASE_TAG', '')
+          tag = tag_raw.lstrip('vV').strip()
+          assets_raw = os.environ.get('RELEASE_ASSETS', '[]')
+          repo = os.environ.get('REPO_NAME', 'iMAboud/iMA-Menu-Plugins')
+
+          try:
+              assets = json.loads(assets_raw)
+          except Exception:
+              assets = []
 
           download_url = None
           for asset in assets:
@@ -135,7 +146,7 @@ jobs:
                   break
 
           if not download_url:
-              download_url = f"https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/launcher.exe"
+              download_url = f"https://github.com/{repo}/releases/download/{tag_raw}/launcher.exe"
 
           manifest = {
               "version": tag,
