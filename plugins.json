@@ -19,20 +19,29 @@
     },
     {
         "name": "Wall",
-        "description": "Download 4k wallpapers with hotkeys",
+        "description": "Set random high-quality desktop wallpaper",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Wall/wall.png",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "install_path": "iMA Menu/plugins/Wall",
         "nss_file": "wall.nss",
         "nss_path": "iMA Menu/plugins/Wall"
     },
     {
+        "name": "End",
+        "description": "Unlock files and folders by ending locking processes.",
+        "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/End/end.png",
+        "version": "1.0.2",
+        "install_path": "iMA Menu/plugins/End",
+        "nss_file": "end.nss",
+        "nss_path": "iMA Menu/plugins/End"
+    },
+    {
         "name": "Organize",
-        "description": "Auto sort your desktop & downloads in folders",
+        "description": "Auto organize files into structured folders",
         "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Organize/organize.png",
         "version": "1.0.0",
-        "install_path": "iMA Menu/plugins/Organize",
-        "nss_file": "Organize.nss",
+        "install_path": "iMA Menu/plugins/organize",
+        "nss_file": "organize.nss",
         "nss_path": "iMA Menu/plugins/Organize"
     },
     {
