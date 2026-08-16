@@ -1,5 +1,14 @@
 [
   {
+    "name": "Covert to .ico",
+    "description": "Convert any image to ico with high quality",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/image2ico/ico.png",
+    "version": "1.0.0",
+    "install_path": "iMA Menu/plugins/image2ico",
+    "nss_file": "image2ico.nss",
+    "nss_path": "iMA Menu/plugins/image2ico"
+  },
+  {
     "name": "Temp Mail",
     "description": "Generate disposable temp emails & verification codes",
     "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/temp%20mail/mail.png",
