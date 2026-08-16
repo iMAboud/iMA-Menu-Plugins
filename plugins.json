@@ -103,7 +103,7 @@
     "name": "Draw",
     "description": "Draw over any app or desktop",
     "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Draw/draw.png",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "install_path": "iMA Menu/plugins/Draw",
     "nss_file": "Draw.nss",
     "nss_path": "iMA Menu/plugins/Draw"
@@ -121,7 +121,7 @@
     "name": "iMShare",
     "description": "Send and receive files between devices, no limit.",
     "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/iMShare/imshare.png",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "launch": true,
     "launch_file": "upload.exe",
     "install_path": "iMA Menu/plugins/iMShare",
