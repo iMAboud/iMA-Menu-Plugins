@@ -115,15 +115,7 @@
     "version": "1.0.4",
     "install_path": "iMA Menu/plugins/YT",
     "nss_file": "YT.nss",
-    "nss_path": "iMA Menu/plugins/YT",
-    "dependencies": [
-      {
-        "name": "yt-dlp.exe"
-      },
-      {
-        "name": "ffmpeg.exe"
-      }
-    ]
+    "nss_path": "iMA Menu/plugins/YT"
   },
   {
     "name": "iMShare",
@@ -134,11 +126,6 @@
     "launch_file": "upload.exe",
     "install_path": "iMA Menu/plugins/iMShare",
     "nss_file": "iMShare.nss",
-    "nss_path": "iMA Menu/plugins/iMShare",
-    "dependencies": [
-      {
-        "name": "croc.exe"
-      }
-    ]
+    "nss_path": "iMA Menu/plugins/iMShare"
   }
 ]
