@@ -3,7 +3,7 @@
     "name": "Tools",
     "description": "Collection of tools for file and images utilities",
     "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Tools/iMATools.png",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "install_path": "iMA Menu/plugins/Tools",
     "nss_file": "Tools.nss",
     "nss_path": "iMA Menu/plugins/Tools"
