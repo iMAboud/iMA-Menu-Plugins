@@ -1,1 +1,0 @@
-uploads images to imgur instantly

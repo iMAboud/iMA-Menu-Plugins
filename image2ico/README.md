@@ -1,1 +1,0 @@
-Convert any image to ico with high quality
