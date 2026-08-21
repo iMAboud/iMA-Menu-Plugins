@@ -11,7 +11,7 @@ on:
       - 'README.md'
       - '.gitignore'
   release:
-    types: [published, created, edited]
+    types: [published, created, edited, released]
   workflow_dispatch:
 
 permissions:
@@ -28,7 +28,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -36,47 +38,99 @@ jobs:
           python-version: '3.11'
 
       - name: Detect Changed Plugins and Increment Version
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
         run: |
-          python - << 'EOF'
-          import json, subprocess, os
+          python -c "import os, textwrap; exec(textwrap.dedent('''
+          import json, subprocess, os, urllib.parse
 
-          before_sha = "${{ github.event.before }}"
-          after_sha = "${{ github.sha }}"
+          before_sha = os.environ.get('BEFORE_SHA', '')
+          after_sha = os.environ.get('AFTER_SHA', 'HEAD')
 
-          if before_sha == "0000000000000000000000000000000000000000" or not before_sha:
-              diff_cmd = ['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', after_sha]
-          else:
-              diff_cmd = ['git', 'diff', '--name-only', before_sha, after_sha]
+          diff_output = []
+          if before_sha and before_sha != '0000000000000000000000000000000000000000':
+              try:
+                  subprocess.check_call(['git', 'cat-file', '-e', f'{before_sha}^{{commit}}'])
+                  diff_output = subprocess.check_output(
+                      ['git', 'diff', '--name-only', before_sha, after_sha],
+                      text=True
+                  ).splitlines()
+              except Exception as e:
+                  print(f'Direct before_sha diff failed ({e}), falling back...')
 
-          diff_output = subprocess.check_output(diff_cmd, text=True).splitlines()
+          if not diff_output:
+              try:
+                  diff_output = subprocess.check_output(
+                      ['git', 'diff', '--name-only', 'HEAD~1', 'HEAD'],
+                      text=True
+                  ).splitlines()
+              except Exception:
+                  try:
+                      diff_output = subprocess.check_output(
+                          ['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', after_sha],
+                          text=True
+                      ).splitlines()
+                  except Exception:
+                      diff_output = []
 
-          ignored_roots = {'.github', '.git', 'cache', 'icons', 'lib'}
-          changed_folders = set()
-          for file in diff_output:
-              parts = file.strip().replace('\\', '/').split('/')
-              if len(parts) > 1 and parts[0].lower() not in ignored_roots:
-                  changed_folders.add(parts[0].lower())
-
-          if not changed_folders:
-              print("No plugin folder changes detected.")
-              exit(0)
-
-          print(f"Detected changed folders: {changed_folders}")
+          print(f'Changed files in commit(s): {diff_output}')
 
           if not os.path.exists('plugins.json'):
-              print("plugins.json not found.")
+              print('plugins.json not found.')
               exit(0)
 
           with open('plugins.json', 'r', encoding='utf-8') as f:
               plugins = json.load(f)
 
-          updated_any = False
+          plugins_to_bump = set()
+          ignored_roots = {'.github', '.git', 'cache', 'icons', 'lib'}
+
           for p in plugins:
               if not isinstance(p, dict) or 'name' not in p:
                   continue
+
               p_name = p['name'].strip()
-              folder_name = p.get('install_path', '').replace('\\', '/').split('/')[-1].lower()
-              if p_name.lower() in changed_folders or folder_name in changed_folders:
+              folder_names = {p_name.lower()}
+              if 'install_path' in p:
+                  folder_names.add(p['install_path'].replace('\\\\', '/').split('/')[-1].lower())
+
+              icon_url = p.get('icon_url', '')
+              icon_path = urllib.parse.urlparse(icon_url).path.lower()
+              icon_filename = os.path.basename(icon_path)
+
+              for file in diff_output:
+                  file_clean = file.strip().replace('\\\\', '/').strip('/')
+                  parts = file_clean.split('/')
+
+                  if len(parts) > 1 and parts[0].lower() in folder_names and parts[0].lower() not in ignored_roots:
+                      filename = parts[-1].lower()
+                      # Determine if the modified file is an icon (which should NOT trigger version bump)
+                      is_icon = (
+                          (filename == icon_filename) or
+                          (file_clean.lower() in icon_path and icon_path != '') or
+                          (icon_filename and filename in [
+                              os.path.splitext(icon_filename)[0] + ext
+                              for ext in ['.png', '.ico', '.jpg', '.jpeg', '.svg']
+                          ])
+                      )
+
+                      if not is_icon:
+                          print(f\"Plugin '{p_name}': triggering bump due to change in file '{file_clean}'\")
+                          plugins_to_bump.add(p_name)
+                      else:
+                          print(f\"Plugin '{p_name}': ignoring icon file change '{file_clean}'\")
+
+          if not plugins_to_bump:
+              print('No plugin non-icon file changes detected.')
+              exit(0)
+
+          print(f'Plugins to bump: {plugins_to_bump}')
+          updated_any = False
+
+          for p in plugins:
+              p_name = p.get('name', '').strip()
+              if p_name in plugins_to_bump:
                   old_v = str(p.get('version', '1.0.0')).strip()
                   parts = old_v.split('.')
                   while len(parts) < 3:
@@ -85,7 +139,7 @@ jobs:
                       parts[-1] = str(int(parts[-1]) + 1)
                       new_v = '.'.join(parts)
                       p['version'] = new_v
-                      print(f"Auto-bumped '{p_name}': {old_v} -> {new_v}")
+                      print(f\"Auto-bumped '{p_name}': {old_v} -> {new_v}\")
                       updated_any = True
                   except ValueError:
                       pass
@@ -93,9 +147,13 @@ jobs:
           if updated_any:
               with open('plugins.json', 'w', encoding='utf-8') as f:
                   json.dump(plugins, f, indent=2, ensure_ascii=False)
-              with open(os.environ['GITHUB_ENV'], 'a') as env_file:
-                  env_file.write("HAS_BUMP=true\n")
-          EOF
+                  f.write('\\n')
+
+              env_file_path = os.environ.get('GITHUB_ENV')
+              if env_file_path and os.path.exists(env_file_path):
+                  with open(env_file_path, 'a', encoding='utf-8') as env_file:
+                      env_file.write('HAS_BUMP=true\\n')
+          '''))"
 
       - name: Commit & Push Updated plugins.json
         if: env.HAS_BUMP == 'true'
@@ -103,8 +161,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add plugins.json
-          git commit -m "chore(plugins): auto-bump plugin versions [skip ci]"
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(plugins): auto-bump plugin versions [skip ci]"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
 
   # -----------------------------------------------------------------
   # Job 2: Auto-update version.json from GitHub Release
@@ -120,6 +181,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -128,7 +193,7 @@ jobs:
 
       - name: Update version.json with Latest Release Tag & Download URL
         run: |
-          python - << 'EOF'
+          python -c "import os, textwrap; exec(textwrap.dedent('''
           import json, os, urllib.request
 
           repo = os.environ.get('REPO_NAME', 'iMAboud/iMA-Menu-Plugins')
@@ -136,16 +201,22 @@ jobs:
           assets_raw = os.environ.get('RELEASE_ASSETS', '[]')
           token = os.environ.get('GITHUB_TOKEN', '')
 
-          # If triggered manually via workflow_dispatch, fetch latest release via API
+          # If triggered manually via workflow_dispatch or tag missing, fetch latest release via API
           if not tag_raw:
+              headers = {'User-Agent': 'GitHub-Action'}
+              if token:
+                  headers['Authorization'] = f'Bearer {token}'
               req = urllib.request.Request(
-                  f"https://api.github.com/repos/{repo}/releases/latest",
-                  headers={"User-Agent": "GitHub-Action", "Authorization": f"Bearer {token}"}
+                  f'https://api.github.com/repos/{repo}/releases/latest',
+                  headers=headers
               )
-              with urllib.request.urlopen(req) as resp:
-                  rel_data = json.loads(resp.read().decode('utf-8'))
-                  tag_raw = str(rel_data.get('tag_name', '')).strip()
-                  assets_raw = json.dumps(rel_data.get('assets', []))
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      rel_data = json.loads(resp.read().decode('utf-8'))
+                      tag_raw = str(rel_data.get('tag_name', '')).strip()
+                      assets_raw = json.dumps(rel_data.get('assets', []))
+              except Exception as e:
+                  print(f'Error querying GitHub API for latest release: {e}')
 
           tag_clean = tag_raw.lstrip('vV').strip()
           try:
@@ -160,24 +231,32 @@ jobs:
                   break
 
           # Fallback if asset list is empty or processing
+          if not download_url and tag_raw:
+              download_url = f'https://github.com/{repo}/releases/download/{tag_raw}/launcher.exe'
+
           if not download_url:
-              download_url = f"https://github.com/{repo}/releases/download/{tag_raw}/launcher.exe"
+              print('Could not determine download_url.')
+              exit(0)
 
           manifest = {
-              "version": tag_clean,
-              "download_url": download_url
+              'version': tag_clean,
+              'download_url': download_url
           }
 
           with open('version.json', 'w', encoding='utf-8') as f:
               json.dump(manifest, f, indent=2, ensure_ascii=False)
+              f.write('\\n')
 
-          print(f"Updated version.json -> version: {tag_clean}, download_url: {download_url}")
-          EOF
+          print(f'Updated version.json -> version: {tag_clean}, download_url: {download_url}')
+          '''))"
 
       - name: Commit & Push Updated version.json
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add version.json
-          git diff --quiet && git diff --staged --quiet || git commit -m "chore(launcher): sync version.json [skip ci]"
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(launcher): sync version.json [skip ci]"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
