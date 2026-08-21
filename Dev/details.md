@@ -1,4 +1,4 @@
-# Menu Items Reference
+# Menu Items
 
 - **Compile**: Compiles C# WPF file into `.exe` (.cs files)
 - **Import**: Imports .nss files to iMA Menu (.nss files)

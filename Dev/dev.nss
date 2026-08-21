@@ -5,7 +5,7 @@ item(title='Import' pos=top type='file' where=path.file.ext(sel.path) =='.nss' c
 item
 (
 	type='back|dir'
-	title='Pip'
+	title='Pip install'
 	image=\uE0B5
         vis=key.control()
 	cmd='powershell.exe'
@@ -19,20 +19,20 @@ vis=@if(key.shift() || key.control(), "hidden", "normal")
 cmd='cmd.exe' args='/k python @sel.path.quote' dir='@sel.dir' 
 pos=0 image=["\uE230"])
 
-item(title='Build' find='.spec' 
+item(title='Pyinstaller Build' find='.spec' 
 vis=@if(key.shift() || key.control(), "hidden", "normal") 
 cmd='pyinstaller' args='@sel.path.quote' dir='@sel.dir' 
 pos=0 image=["\uE230"])
 
 item(type='back' title='npm install' vis=key.control() cmd='cmd' args='/c pushd "@sel.path" && npm install && npm run build && if exist "dist" (echo "@sel.path\dist" | clip && echo Copied dist path to clipboard && firebase init) else (echo No dist folder found)' image='@app.dir\imports\icons\node_439a901a_54922f.png' menu='')
 
-item(type='back' title='Dev' vis=key.control() 
+item(type='back' title='npm Dev' vis=key.control() 
 cmd='cmd' arg='/k pushd "@sel.path" && npm run dev' 
 image=["\uE295"])
 
 
-item(type='back' title='Build' vis=key.control() cmd='cmd' args='/c pushd "@sel.path" && npm run build' image='@app.dir\imports\icons\1CgDvBqQ4AJczq1ov_AgkYA_537167a1_54922f.png' menu='')
+item(type='back' title='npm Build' vis=key.control() cmd='cmd' args='/c pushd "@sel.path" && npm run build' image='@app.dir\imports\icons\1CgDvBqQ4AJczq1ov_AgkYA_537167a1_54922f.png' menu='')
 
-item(type='back' title='Deploy' vis=key.control() cmd='cmd' args='/c pushd "@sel.path" && firebase deploy' image='@app.dir\imports\icons\1CgDvBqQ4AJczq1ov_AgkYA_537167a1_54922f.png' menu='')
+item(type='back' title='Firebase Deploy' vis=key.control() cmd='cmd' args='/c pushd "@sel.path" && firebase deploy' image='@app.dir\imports\icons\1CgDvBqQ4AJczq1ov_AgkYA_537167a1_54922f.png' menu='')
 
 item(mode=single type='back|dir|file' title='Antigravity' cmd='"C:\Users\iMA\AppData\Local\Programs\Antigravity IDE\Antigravity IDE.exe"' args='"@sel.path"' vis=key.control() image=image.res('C:/Users/iMA/AppData/Local/Programs/Antigravity IDE/Antigravity IDE.exe') menu='' pos=2)
