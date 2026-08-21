@@ -3,7 +3,7 @@
     "name": "Dev",
     "description": "Collection of tools for developers",
     "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Dev/dev.png",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "install_path": "iMA Menu/plugins/Dev",
     "nss_file": "Dev.nss",
     "nss_path": "iMA Menu/plugins/Dev"
