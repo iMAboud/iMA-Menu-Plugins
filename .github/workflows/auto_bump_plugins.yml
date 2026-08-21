@@ -42,7 +42,7 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
         run: |
-          python -c "import os, textwrap; exec(textwrap.dedent('''
+          python -c "import sys, textwrap; exec(textwrap.dedent(sys.stdin.read()))" << 'EOF'
           import json, subprocess, os, urllib.parse
 
           before_sha = os.environ.get('BEFORE_SHA', '')
@@ -93,14 +93,14 @@ jobs:
               p_name = p['name'].strip()
               folder_names = {p_name.lower()}
               if 'install_path' in p:
-                  folder_names.add(p['install_path'].replace('\\\\', '/').split('/')[-1].lower())
+                  folder_names.add(p['install_path'].replace('\\', '/').split('/')[-1].lower())
 
               icon_url = p.get('icon_url', '')
               icon_path = urllib.parse.urlparse(icon_url).path.lower()
               icon_filename = os.path.basename(icon_path)
 
               for file in diff_output:
-                  file_clean = file.strip().replace('\\\\', '/').strip('/')
+                  file_clean = file.strip().replace('\\', '/').strip('/')
                   parts = file_clean.split('/')
 
                   if len(parts) > 1 and parts[0].lower() in folder_names and parts[0].lower() not in ignored_roots:
@@ -116,10 +116,10 @@ jobs:
                       )
 
                       if not is_icon:
-                          print(f\"Plugin '{p_name}': triggering bump due to change in file '{file_clean}'\")
+                          print(f"Plugin '{p_name}': triggering bump due to change in file '{file_clean}'")
                           plugins_to_bump.add(p_name)
                       else:
-                          print(f\"Plugin '{p_name}': ignoring icon file change '{file_clean}'\")
+                          print(f"Plugin '{p_name}': ignoring icon file change '{file_clean}'")
 
           if not plugins_to_bump:
               print('No plugin non-icon file changes detected.')
@@ -139,7 +139,7 @@ jobs:
                       parts[-1] = str(int(parts[-1]) + 1)
                       new_v = '.'.join(parts)
                       p['version'] = new_v
-                      print(f\"Auto-bumped '{p_name}': {old_v} -> {new_v}\")
+                      print(f"Auto-bumped '{p_name}': {old_v} -> {new_v}")
                       updated_any = True
                   except ValueError:
                       pass
@@ -147,13 +147,13 @@ jobs:
           if updated_any:
               with open('plugins.json', 'w', encoding='utf-8') as f:
                   json.dump(plugins, f, indent=2, ensure_ascii=False)
-                  f.write('\\n')
+                  f.write('\n')
 
               env_file_path = os.environ.get('GITHUB_ENV')
               if env_file_path and os.path.exists(env_file_path):
                   with open(env_file_path, 'a', encoding='utf-8') as env_file:
-                      env_file.write('HAS_BUMP=true\\n')
-          '''))"
+                      env_file.write('HAS_BUMP=true\n')
+          EOF
 
       - name: Commit & Push Updated plugins.json
         if: env.HAS_BUMP == 'true'
@@ -193,7 +193,7 @@ jobs:
 
       - name: Update version.json with Latest Release Tag & Download URL
         run: |
-          python -c "import os, textwrap; exec(textwrap.dedent('''
+          python -c "import sys, textwrap; exec(textwrap.dedent(sys.stdin.read()))" << 'EOF'
           import json, os, urllib.request
 
           repo = os.environ.get('REPO_NAME', 'iMAboud/iMA-Menu-Plugins')
@@ -245,10 +245,10 @@ jobs:
 
           with open('version.json', 'w', encoding='utf-8') as f:
               json.dump(manifest, f, indent=2, ensure_ascii=False)
-              f.write('\\n')
+              f.write('\n')
 
           print(f'Updated version.json -> version: {tag_clean}, download_url: {download_url}')
-          '''))"
+          EOF
 
       - name: Commit & Push Updated version.json
         run: |
