@@ -10,4 +10,3 @@
 - **Dev**: Starts development server via `npm run dev` (package.json) **CTRL + Right Click**
 - **Build (Node)**: Builds project assets via `npm run build` (package.json) **CTRL + Right Click**
 - **Deploy**: Deploys project to Firebase hosting (package.json) **CTRL + Right Click**
-- **Antigravity**: Launches target in Antigravity IDE (any file/folder) **CTRL + Right Click**

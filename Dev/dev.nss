@@ -33,6 +33,4 @@ image=["\uE295"])
 
 item(type='back' title='npm Build' vis=key.control() cmd='cmd' args='/c pushd "@sel.path" && npm run build' image='@app.dir\imports\icons\1CgDvBqQ4AJczq1ov_AgkYA_537167a1_54922f.png' menu='')
 
-item(type='back' title='Firebase Deploy' vis=key.control() cmd='cmd' args='/c pushd "@sel.path" && firebase deploy' image='@app.dir\imports\icons\1CgDvBqQ4AJczq1ov_AgkYA_537167a1_54922f.png' menu='')
-
-item(mode=single type='back|dir|file' title='Antigravity' cmd='"C:\Users\iMA\AppData\Local\Programs\Antigravity IDE\Antigravity IDE.exe"' args='"@sel.path"' vis=key.control() image=image.res('C:/Users/iMA/AppData/Local/Programs/Antigravity IDE/Antigravity IDE.exe') menu='' pos=2)
+item(type='back' title='Deploy' vis=key.control() cmd='cmd' args='/c pushd "@sel.path" && firebase deploy' image='@app.dir\imports\icons\1CgDvBqQ4AJczq1ov_AgkYA_537167a1_54922f.png' menu='')
