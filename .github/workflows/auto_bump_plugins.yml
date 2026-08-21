@@ -148,15 +148,9 @@ jobs:
               with open('plugins.json', 'w', encoding='utf-8') as f:
                   json.dump(plugins, f, indent=2, ensure_ascii=False)
                   f.write('\n')
-
-              env_file_path = os.environ.get('GITHUB_ENV')
-              if env_file_path and os.path.exists(env_file_path):
-                  with open(env_file_path, 'a', encoding='utf-8') as env_file:
-                      env_file.write('HAS_BUMP=true\n')
           EOF
 
       - name: Commit & Push Updated plugins.json
-        if: env.HAS_BUMP == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
