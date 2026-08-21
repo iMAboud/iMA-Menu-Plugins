@@ -4,7 +4,7 @@ item(title='Import' pos=top type='file' where=path.file.ext(sel.path) =='.nss' c
 
 item
 (
-	type='back.dir'
+	type='back|dir'
 	title='Pip'
 	image=\uE0B5
         vis=key.control()
@@ -35,4 +35,4 @@ item(type='back' title='Build' vis=key.control() cmd='cmd' args='/c pushd "@sel.
 
 item(type='back' title='Deploy' vis=key.control() cmd='cmd' args='/c pushd "@sel.path" && firebase deploy' image='@app.dir\imports\icons\1CgDvBqQ4AJczq1ov_AgkYA_537167a1_54922f.png' menu='')
 
-item(mode=single type='file|dir|back' title='Antigravity' cmd='"C:\Users\iMA\AppData\Local\Programs\Antigravity IDE\Antigravity IDE.exe"' args='"@sel.path"' vis=key.control() image=image.res('C:/Users/iMA/AppData/Local/Programs/Antigravity IDE/Antigravity IDE.exe') menu='' pos=2)
+item(mode=single type='back|dir|file' title='Antigravity' cmd='"C:\Users\iMA\AppData\Local\Programs\Antigravity IDE\Antigravity IDE.exe"' args='"@sel.path"' vis=key.control() image=image.res('C:/Users/iMA/AppData/Local/Programs/Antigravity IDE/Antigravity IDE.exe') menu='' pos=2)
