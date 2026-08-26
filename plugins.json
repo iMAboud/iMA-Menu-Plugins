@@ -39,7 +39,7 @@
     "name": "Wall",
     "description": "Set random high-quality desktop wallpaper",
     "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Wall/wall.png",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "install_path": "iMA Menu/plugins/Wall",
     "nss_file": "wall.nss",
     "nss_path": "iMA Menu/plugins/Wall"
