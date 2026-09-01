@@ -21,7 +21,7 @@
     "name": "TempMail",
     "description": "Generate disposable temp emails & verification codes",
     "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/tempmail/TempMail.png",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "install_path": "iMA Menu/plugins/TempMail",
     "nss_file": "TempMail.nss",
     "nss_path": "iMA Menu/plugins/TempMail"
