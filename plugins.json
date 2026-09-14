@@ -57,7 +57,7 @@
     "name": "Organize",
     "description": "Auto organize files into structured folders",
     "icon_url": "https://raw.githubusercontent.com/iMAboud/iMA-Menu-Plugins/main/Organize/organize.png",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "install_path": "iMA Menu/plugins/organize",
     "nss_file": "organize.nss",
     "nss_path": "iMA Menu/plugins/Organize"
