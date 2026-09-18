@@ -7,3 +7,4 @@ Collection of tools for file and images utilities
 - Gird Slicer
 - Text, gaps and margins cutter
 - Enhance Quality
+- Trim Transparency
