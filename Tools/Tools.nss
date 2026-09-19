@@ -55,6 +55,12 @@ menu(type='file' find='.png' mode='multiple' title='Crop Transparency' image=["\
     item(title='Keep Original' cmd='@app.dir\plugins\tools\iMATools.exe' args='--trimk @sel(true)' image=["\uE235"])
 }
 
+item(find='.png|.jpg|.jpeg|.bmp|.gif|.tif|.tiff|.jfif|.svg|.webp' 
+         title='Change Dimensions' 
+         cmd='@app.dir\plugins\tools\iMATools.exe' 
+         args='--dimension @sel(true)' 
+         image='<svg fill="none" viewBox="0 0 24 24"><path fill="@image.color1" d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm2 0v14h14V5H5zm3 3h4V6H6v6h2V8zm10 8h-4v2h6v-6h-2v4z"/></svg>')
+
 }
 
 
