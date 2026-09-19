@@ -8,3 +8,4 @@ Collection of tools for file and images utilities
 - Text, gaps and margins cutter
 - Enhance Quality
 - Trim Transparency
+- Change Dimensions and Aspect Ratio
