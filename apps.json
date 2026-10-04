@@ -18,5 +18,15 @@
     "asset_name": "iMA Switcher.exe",
     "executable": "iMA Switcher.exe",
     "auto_run": true
+  },
+  {
+    "name": "iMCord",
+    "description": "The cutest Discord client mod",
+    "icon_url": "https://raw.githubusercontent.com/iMAboud/iMACord/main/iMCord.ico",
+    "repo": "iMAboud/iMACord",
+    "asset_name": "iMCord.exe",
+    "executable": "iMCord.exe",
+    "auto_run": true,
+    "github": "https://github.com/iMAboud/iMACord"
   }
 ]
