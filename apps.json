@@ -1,7 +1,7 @@
 [
   {
     "name": "Blink",
-    "description": "Fast and lightweight screenshot app for Windows",
+    "description": "Fast and lightweight screenshot app",
     "icon_url": "https://raw.githubusercontent.com/iMAboud/Blink/main/Blink.ico",
     "repo": "iMAboud/Blink",
     "asset_name": "Blink.exe",
